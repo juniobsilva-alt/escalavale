@@ -50,8 +50,7 @@ body {
 .brand { display: flex; gap: 12px; align-items: center; padding: 4px 8px; }
 .brand-mark {
   width: 40px; height: 40px; border-radius: 10px;
-  background: linear-gradient(135deg, #5b8cff, #22c1a3);
-  display: grid; place-items: center; font-weight: 700; color: #fff;
+  background: #fff; object-fit: cover;
 }
 .brand strong { display: block; font-size: 1.05rem; color: #fff; }
 .brand small { color: #93a3c0; }
