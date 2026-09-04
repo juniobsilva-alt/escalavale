@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EscalaVale — Gestão de Escalas</title>
+  <meta name="description" content="Sistema de gestão de escalas: médiuns, trabalhos, horários e disponibilidade." />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
+
+  <div class="app">
+    <aside class="sidebar" id="sidebar" aria-label="Navegação principal">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">EV</div>
+        <div>
+          <strong>EscalaVale</strong>
+          <small>Gestão de escalas</small>
+        </div>
+      </div>
+      <nav>
+        <button class="nav-item is-active" data-route="dashboard" aria-current="page">
+          <span aria-hidden="true">◧</span> Início
+        </button>
+        <button class="nav-item" data-route="escala">
+          <span aria-hidden="true">◐</span> Escala de dirigentes
+        </button>
+        <button class="nav-item" data-route="mediuns">
+          <span aria-hidden="true">○</span> Médiuns
+        </button>
+        <button class="nav-item" data-route="trabalhos">
+          <span aria-hidden="true">⬔</span> Trabalhos
+        </button>
+        <button class="nav-item" data-route="horarios">
+          <span aria-hidden="true">◷</span> Horários
+        </button>
+        <button class="nav-item" data-route="disponibilidade">
+          <span aria-hidden="true">▦</span> Disponibilidade
+        </button>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="btn btn-ghost btn-sm" id="btn-exportar">Exportar dados</button>
+        <button class="btn btn-ghost btn-sm" id="btn-importar">Importar</button>
+        <input type="file" id="input-importar" accept="application/json" hidden />
+      </div>
+    </aside>
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+    <div class="main-col">
+      <header class="topbar">
+        <button class="icon-btn only-mobile" id="btn-menu" aria-label="Abrir menu">☰</button>
+        <div class="search-wrap">
+          <span aria-hidden="true">⌕</span>
+          <input id="busca-global" type="search" placeholder="Buscar médium, trabalho… ( / )" aria-label="Busca global" />
+        </div>
+        <div class="topbar-actions">
+          <input type="date" id="atalho-data" aria-label="Ir para data da escala" title="Ir para data da escala" />
+          <button class="btn btn-primary" id="btn-nova-escala">+ Nova escala</button>
+        </div>
+      </header>
+
+      <main id="conteudo" class="content" tabindex="-1"></main>
+    </div>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toast-root" aria-live="polite" aria-atomic="false"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
