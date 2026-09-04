@@ -10,6 +10,7 @@ export function renderDashboard(el, irPara) {
   const proximas = proximasEscalas(5);
 
   el.innerHTML = `
+    <div class="hero-logo"><img src="img/salvedeus.jpeg" alt="Salve Deus" width="223" height="223" /></div>
     <div class="page-head">
       <div>
         <h1>Olá, bem-vindo 👋</h1>

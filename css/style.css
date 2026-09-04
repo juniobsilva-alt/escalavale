@@ -300,3 +300,6 @@ table.grade td.vazia { background: #fafafa; }
   table.grade td { min-width: 0; }
   @page { size: landscape; margin: 10mm; }
 }
+
+.hero-logo { text-align: center; margin-bottom: 14px; }
+.hero-logo img { border-radius: 16px; box-shadow: var(--shadow); max-width: 100%; height: auto; }
