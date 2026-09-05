@@ -13,7 +13,7 @@ export function renderEscala(el, dataInicial) {
   let selecionado = -1;
 
   el.innerHTML = `
-    <div class="page-head">
+    <div class="page-head no-print">
       <div><h1>${store.nomeContexto()}</h1><p>Atribua médiuns aos horários do dia ou monte a grade mensal para impressão.</p></div>
     </div>
     <div class="tabs" role="tablist" aria-label="Modo da escala">

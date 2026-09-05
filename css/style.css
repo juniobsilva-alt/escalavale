@@ -288,7 +288,7 @@ table.grade td.vazia { background: #fafafa; }
 .linha-add { display: flex; gap: 8px; }
 .linha-add select, .linha-add input { flex: 1; border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; font-size: .92rem; }
 
-/* Impressão: só a grade */
+/* Impressão: só a grade, sem cabeçalho nem rodapé */
 @media print {
   .sidebar, .topbar, .toolbar, .no-print, .panel-sticky, #toast-root, .tabs { display: none !important; }
   body { background: #fff; }
@@ -298,7 +298,8 @@ table.grade td.vazia { background: #fafafa; }
   .titulo-grade { margin-top: 0; }
   table.grade { font-size: .72rem; }
   table.grade td { min-width: 0; }
-  @page { size: landscape; margin: 10mm; }
+  body { padding: 10mm; }
+  @page { size: landscape; margin: 0; }
 }
 
 .hero-logo { text-align: center; margin-bottom: 14px; }
