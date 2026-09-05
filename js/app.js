@@ -6,7 +6,6 @@ import { renderTrabalhos } from './views/trabalhos.js';
 import { renderHorarios } from './views/horarios.js';
 import { renderEscala } from './views/escala.js';
 import { renderDisponibilidade } from './views/disponibilidade.js';
-import { renderAjanas } from './views/ajanas.js';
 import { renderLogin } from './views/auth.js';
 
 const conteudo = document.getElementById('conteudo');
@@ -18,7 +17,21 @@ const CONTEXTO_POR_ROTA = {
   'dir-trabalhos': 'dirigentes',
   'dir-horarios': 'dirigentes',
   'dir-disponibilidade': 'dirigentes',
-  ajanas: 'ajanas',
+  'aj-grade': 'ajanas',
+  'aj-trabalhos': 'ajanas',
+  'aj-horarios': 'ajanas',
+  'aj-disponibilidade': 'ajanas',
+};
+
+const GRUPO_POR_ROTA = {
+  escala: 'dirigentes',
+  'dir-trabalhos': 'dirigentes',
+  'dir-horarios': 'dirigentes',
+  'dir-disponibilidade': 'dirigentes',
+  'aj-grade': 'ajanas',
+  'aj-trabalhos': 'ajanas',
+  'aj-horarios': 'ajanas',
+  'aj-disponibilidade': 'ajanas',
 };
 
 const ROTAS = {
@@ -28,7 +41,10 @@ const ROTAS = {
   'dir-trabalhos': renderTrabalhos,
   'dir-horarios': renderHorarios,
   'dir-disponibilidade': renderDisponibilidade,
-  ajanas: renderAjanas,
+  'aj-grade': (el) => { apiEscala = renderEscala(el, document.getElementById('atalho-data').value || hojeISO()); },
+  'aj-trabalhos': renderTrabalhos,
+  'aj-horarios': renderHorarios,
+  'aj-disponibilidade': renderDisponibilidade,
 };
 
 function navegar(rota) {
@@ -40,11 +56,11 @@ function navegar(rota) {
     if (ativa) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
   });
-  const noGrupo = ['escala', 'dir-trabalhos', 'dir-horarios', 'dir-disponibilidade'].includes(rota);
-  const toggle = document.querySelector('[data-group="dirigentes"]');
-  if (toggle && noGrupo) {
+  const grupo = GRUPO_POR_ROTA[rota];
+  const toggle = grupo && document.querySelector(`[data-group="${grupo}"]`);
+  if (toggle) {
     toggle.setAttribute('aria-expanded', 'true');
-    document.getElementById('sub-dirigentes').style.display = '';
+    document.getElementById(`sub-${grupo}`).style.display = '';
   }
   document.body.classList.remove('menu-open');
   (ROTAS[rota] || ROTAS.dashboard)(conteudo);
@@ -82,12 +98,13 @@ async function boot() {
 function montarApp(email) {
   document.querySelectorAll('.nav-item').forEach((b) => (b.onclick = () => navegar(b.dataset.route)));
 
-  document.querySelector('[data-group="dirigentes"]').onclick = (e) => {
-    const btn = e.currentTarget;
-    const aberta = btn.getAttribute('aria-expanded') === 'true';
-    btn.setAttribute('aria-expanded', aberta ? 'false' : 'true');
-    document.getElementById('sub-dirigentes').style.display = aberta ? 'none' : '';
-  };
+  document.querySelectorAll('[data-group]').forEach((btn) => {
+    btn.onclick = () => {
+      const aberta = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', aberta ? 'false' : 'true');
+      document.getElementById(`sub-${btn.dataset.group}`).style.display = aberta ? 'none' : '';
+    };
+  });
 
   document.getElementById('btn-menu').onclick = () => document.body.classList.toggle('menu-open');
   document.getElementById('sidebar-backdrop').onclick = () => document.body.classList.remove('menu-open');

@@ -307,3 +307,8 @@ table.grade td.vazia { background: #fafafa; }
 .nav-group-toggle .caret { margin-left: auto; font-size: .75rem; }
 .nav-sub { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 2px 14px; padding-left: 10px; border-left: 2px solid rgba(255,255,255,.15); }
 .nav-item.sub { font-size: .88rem; padding: 8px 12px; }
+
+.titulo-grade-sub { text-align: center; font-size: 1.05rem; margin: 0 0 6px; letter-spacing: .04em; }
+.aviso-grade { text-align: center; font-size: .8rem; font-weight: 700; margin: 0 0 10px; }
+.rodape-fixo { font-size: .75rem; color: var(--muted); font-style: italic; margin: 6px 0 18px; }
+table.grade td.fora-grade { background: #e5e7eb; }

@@ -44,9 +44,18 @@
             <button class="nav-item sub" data-route="dir-disponibilidade">Disponibilidade</button>
           </div>
         </div>
-        <button class="nav-item" data-route="ajanas">
-          <span aria-hidden="true">☾</span> Escala de Ajanãs
-        </button>
+        <div class="nav-group">
+          <button class="nav-item nav-group-toggle" data-group="ajanas" aria-expanded="true">
+            <span aria-hidden="true">☾</span> Escala de Ajanãs
+            <span class="caret" aria-hidden="true">▾</span>
+          </button>
+          <div class="nav-sub" id="sub-ajanas">
+            <button class="nav-item sub" data-route="aj-grade">Grade</button>
+            <button class="nav-item sub" data-route="aj-trabalhos">Trabalhos</button>
+            <button class="nav-item sub" data-route="aj-horarios">Horários</button>
+            <button class="nav-item sub" data-route="aj-disponibilidade">Disponibilidade</button>
+          </div>
+        </div>
       </nav>
       <div class="sidebar-footer">
         <button class="btn btn-ghost btn-sm" id="btn-exportar">Exportar dados</button>

@@ -2,7 +2,7 @@ import { store, DIAS_SEMANA, OCORRENCIAS } from '../store.js';
 import { toast, escapar, estadoVazio } from '../utils.js';
 
 export function renderDisponibilidade(el) {
-  const mediuns = store.mediunsAtivos();
+  const mediuns = store.mediunsParaMontagem();
   let medioId = mediuns[0]?.id ?? 0;
 
   el.innerHTML = `

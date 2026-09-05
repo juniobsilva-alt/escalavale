@@ -90,3 +90,12 @@ Trabalhos, horários, escala, disponibilidade e avisos pertencem a um **contexto
 Médiuns são cadastro único global. Dados legados migram sozinhos para `dirigentes`.
 
 Antes de usar esta versão na nuvem, rode `supabase/migracao-contexto.sql` no SQL Editor.
+
+## Escala de Ajanãs
+
+Mesmas telas dos dirigentes (Grade, Trabalhos, Horários, Disponibilidade) com dados
+isolados por contexto. Grade segue o modelo do documento oficial: título
+"TARAJO DO AMANHECER — ESCALA DOS AJANÃS", aviso de apresentação ao comandante,
+células cinzas quando o trabalho não tem horário no dia, LEITO/Leito Externo e
+rodapé institucional. Modelo inicial: Imunização, Cura, Defumação, Randy (qtd 2).
+Montagem (manual e automática) e disponibilidade usam só função Ajanã.

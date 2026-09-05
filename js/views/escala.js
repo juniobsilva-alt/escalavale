@@ -2,7 +2,7 @@ import {
   store, slotsDaData, celulaMensal, diasDeSessaoDoMes,
   haConflitoHorario, mediumDisponivelNaData,
   DIAS_SEMANA, DIAS_CURTO, MESES, SITUACAO, LEITO,
-  TRABALHOS_MODELO,
+  MODELOS_GRADE, GRADE_CONFIG, FUNCAO_POR_CONTEXTO,
 } from '../store.js';
 import { hojeISO, formatarData, diaSemanaDe, escapar, toast, pillSituacao, estadoVazio } from '../utils.js';
 
@@ -56,7 +56,8 @@ export function renderEscala(el, dataInicial) {
 
     const slots = slotsDaData(dataISO);
     const dia = DIAS_SEMANA[diaSemanaDe(dataISO)];
-    const mediuns = store.mediunsAtivos();
+    const mediuns = store.mediunsParaMontagem();
+    const restrito = store.contextoAtual === 'ajanas';
 
     if (slots.length === 0) {
       corpo.innerHTML = estadoVazio({
@@ -104,7 +105,7 @@ export function renderEscala(el, dataInicial) {
         <select id="p-medium">
           <option value="0">(Nenhum / liberar vaga)</option>
           ${mediuns.map((m) => `<option value="${m.id}" ${s.medio_id === m.id ? 'selected' : ''}>${escapar(m.nome)}</option>`).join('')}
-        </select></div>
+        </select>${restrito ? '<p class="hint muted">Somente médiuns com função Ajanã participam desta escala.</p>' : ''}</div>
       <div class="field"><label for="p-sit">Situação</label>
         <select id="p-sit">${[0, 1, 2].map((v) => `<option value="${v}" ${s.presente === v ? 'selected' : ''}>${SITUACAO[v]}</option>`).join('')}</select></div>
       <div class="field"><label for="p-obs">Observação</label>
@@ -136,6 +137,9 @@ export function renderEscala(el, dataInicial) {
       const medioId = Number(selMedium.value);
       const presente = Number(painel.querySelector('#p-sit').value);
       const obs = painel.querySelector('#p-obs').value.trim();
+      if (restrito && medioId > 0 && !mediuns.some((m) => m.id === medioId)) {
+        toast('Somente médiuns com função Ajanã nesta escala.', 'error'); return;
+      }
       if (medioId > 0) {
         if (haConflitoHorario(medioId, dataISO, s.hora_inicio, s.hora_fim, s.escala_id)) {
           toast('Conflito de horário: escolha outro médium.', 'error'); return;
@@ -177,7 +181,9 @@ export function renderEscala(el, dataInicial) {
       return c.nomes.length > 0 || c.temLeito;
     }).length, 0);
 
-    const faltamTrabalhos = TRABALHOS_MODELO.filter((n) =>
+    const modelo = MODELOS_GRADE[store.contextoAtual] ?? MODELOS_GRADE.dirigentes;
+    const cfg = GRADE_CONFIG[store.contextoAtual] ?? GRADE_CONFIG.dirigentes;
+    const faltamTrabalhos = modelo.trabalhos.filter((n) =>
       !store.db.trabalhos.some((t) => t.ativo === 1 && t.nome.toLowerCase() === n.toLowerCase()));
     const diasSessao = [...new Set(store.db.horarios.map((h) => h.dia_semana))].sort();
 
@@ -194,12 +200,14 @@ export function renderEscala(el, dataInicial) {
       <div class="card no-print">
         <h3>Para preencher a grade corretamente</h3>
         <ul class="check">
-          <li>${trabalhos.length > 0 ? '✅' : '⬜'} <strong>Trabalhos (colunas):</strong> ${trabalhos.length} cadastrado(s). O modelo usa 10: ${TRABALHOS_MODELO.join(' · ')}.${faltamTrabalhos.length ? ` Faltam: ${faltamTrabalhos.join(', ')}.` : ''}</li>
+          <li>${trabalhos.length > 0 ? '✅' : '⬜'} <strong>Trabalhos (colunas):</strong> ${trabalhos.length} cadastrado(s). O modelo usa ${modelo.trabalhos.length}: ${modelo.trabalhos.join(' · ')}.${faltamTrabalhos.length ? ` Faltam: ${faltamTrabalhos.join(', ')}.` : ''}</li>
           <li>${dias.length > 0 ? '✅' : '⬜'} <strong>Horários (linhas):</strong> cadastre ao menos 1 horário por trabalho em cada dia de sessão. Dias com grade hoje: ${diasSessao.length ? diasSessao.map((d) => DIAS_SEMANA[d]).join(', ') : 'nenhum'}.</li>
           <li>${store.mediunsAtivos().length > 0 ? '✅' : '⬜'} <strong>Médiuns (nomes):</strong> ${store.mediunsAtivos().length} ativo(s). Dá para cadastrar na hora, clicando na célula.</li>
         </ul>
-        <p class="muted">O botão <strong>Criar grade modelo</strong> cadastra os 10 trabalhos e os horários de Qua/Sáb/Dom (19h–21h) sem duplicar o que já existe.</p>
+        <p class="muted">O botão <strong>Criar grade modelo</strong> cadastra os trabalhos (${modelo.trabalhos.join(', ')}) e os horários de Qua/Sáb/Dom (19h–21h) sem duplicar o que já existe.</p>
       </div>` : ''}
+      ${cfg.titulo ? `<h2 class="titulo-grade">${cfg.titulo}</h2><h3 class="titulo-grade-sub">ESCALA DOS AJANÃS — ${MESES[mesNum - 1].toUpperCase()} DE ${ano}</h3>` : ''}
+      ${cfg.aviso ? `<p class="aviso-grade">${cfg.aviso}</p>` : ''}
       <h2 class="titulo-grade">Escala de trabalho do mês de ${MESES[mesNum - 1]} de ${ano}</h2>
       ${trabalhos.length === 0 || dias.length === 0 ? estadoVazio({ icone: '📅', titulo: 'Grade vazia', descricao: 'Complete os itens acima para gerar a grade.' }) : `
       <div class="table-wrap grade-wrap"><table class="grade">
@@ -208,9 +216,11 @@ export function renderEscala(el, dataInicial) {
           ${dias.map((d) => `<tr>
             <td class="col-dia"><strong>${d.dia}-${DIAS_CURTO[d.dow].toLowerCase()}</strong><br/><small>${DIAS_CURTO[d.dow].toUpperCase()}</small></td>
             ${trabalhos.map((t) => {
+              const semGrade = store.horariosDoTrabalhoNoDia(t.id, d.dow).length === 0;
+              if (semGrade) return `<td class="fora-grade"><span class="muted">—</span></td>`;
               const c = celulaMensal(d.iso, t.id);
               const corpoNomes = c.nomes.map((n) => `<div class="nome">${escapar(n)}</div>`).join('');
-              const leito = c.temLeito ? `<div class="nome leito">LEITO</div>` : '';
+              const leito = c.temLeito ? `<div class="nome leito">${escapar(c.itens.find((e) => e.medio_id === 0)?.observacao?.toUpperCase() || 'LEITO')}</div>` : '';
               const vazia = !c.nomes.length && !c.temLeito;
               return `<td class="${vazia ? 'vazia' : ''}"><button class="celula" data-dia="${d.iso}" data-trab="${t.id}" aria-label="${escapar(t.nome)} ${d.iso}">${corpoNomes}${leito}${vazia ? '<span class="muted">—</span>' : ''}</button></td>`;
             }).join('')}
@@ -218,6 +228,7 @@ export function renderEscala(el, dataInicial) {
         </tbody>
       </table></div>
       <p class="rodape-grade" id="rodape-grade">${escapar(store.notaDoMes(mes))}</p>
+      ${cfg.rodapeFixo ? `<p class="rodape-fixo">${escapar(cfg.rodapeFixo)}</p>` : ''}
       <div class="card no-print">
         <h3>Avisos do rodapé</h3>
         <p class="muted">Ex.: Aramê: 20 &nbsp;|&nbsp; Angical: 15 &nbsp;|&nbsp; Julgamento: NT &nbsp;|&nbsp; Sessão Branca: 22 &nbsp;|&nbsp; Turigano: 14, 21, 28 &nbsp;|&nbsp; Leito Magnético: 03, 24</p>
@@ -257,7 +268,7 @@ export function renderEscala(el, dataInicial) {
         <div class="modal" role="dialog" aria-modal="true" aria-label="Distribuição automática">
           <h2>Distribuir Mediuns Automaticamente</h2>
           <p class="modal-sub">Sorteio com rodízio justo para ${MESES[mes.split('-')[1] - 1]} de ${mes.split('-')[0]}.</p>
-          <div class="alert info">Somente médiuns com função <strong>Doutrinador</strong>. Respeita <strong>disponibilidade</strong> e <strong>conflitos de horário</strong>. Pula células <strong>LEITO</strong> e trabalhos sem horário no dia.</div>
+          <div class="alert info">Somente médiuns com função <strong>${FUNCAO_POR_CONTEXTO[store.contextoAtual] ?? '—'}</strong>. Respeita <strong>disponibilidade</strong> e <strong>conflitos de horário</strong>. Pula células <strong>LEITO</strong> e trabalhos sem horário no dia.</div>
           <div class="alert info">Quantidade por célula conforme o campo <strong>Quantidade de Mediuns</strong> de cada trabalho (menu Trabalhos).</div>
           <div class="quick-actions" style="flex-direction:column;align-items:stretch">
             <button class="btn btn-primary" id="d-vazias">Preencher células vazias</button>
@@ -309,7 +320,9 @@ export function renderEscala(el, dataInicial) {
     function pintar() {
       const c = celulaMensal(dataISO, trabalhoId);
       const ocupados = new Set(c.itens.map((e) => e.medio_id));
-      const livres = store.mediunsAtivos().filter((m) => !ocupados.has(m.id));
+      const elegiveis = store.mediunsParaMontagem();
+      const restrito = store.contextoAtual === 'ajanas';
+      const livres = elegiveis.filter((m) => !ocupados.has(m.id));
       raiz.innerHTML = `
         <div class="modal-backdrop" id="cel-backdrop">
           <div class="modal" role="dialog" aria-modal="true" aria-label="Célula ${escapar(trabalho.nome)}">
@@ -322,7 +335,7 @@ export function renderEscala(el, dataInicial) {
                 <button class="btn btn-sm" data-rm="${e.id}">Remover</button></li>`).join('')}
             </ul>`}
             ${horarios.length > 0 ? `
-            <div class="field"><label for="c-medium">Adicionar médium</label>
+            <div class="field"><label for="c-medium">Adicionar médium</label>${restrito ? '<p class="hint muted">Somente função Ajanã.</p>' : ''}
               <div class="linha-add">
                 <select id="c-medium">${livres.map((m) => `<option value="${m.id}">${escapar(m.nome)}</option>`).join('') || '<option value="">— todos já escalados —</option>'}</select>
                 <button class="btn btn-primary btn-sm" id="c-add">Adicionar</button>
@@ -378,6 +391,9 @@ export function renderEscala(el, dataInicial) {
 
       async function vincular(medioId) {
         const ref = horarios[0];
+        if (restrito && !elegiveis.some((m) => m.id === medioId)) {
+          toast('Somente médiuns com função Ajanã nesta escala.', 'error'); return;
+        }
         if (haConflitoHorario(medioId, dataISO, ref.hora_inicio, ref.hora_fim, 0)) {
           toast('Conflito: médium já escalado neste horário.', 'error'); return;
         }
@@ -403,9 +419,9 @@ export function renderEscala(el, dataInicial) {
         const nome = raiz.querySelector('#c-novo').value.trim();
         if (!nome) { toast('Informe o nome.', 'error'); return; }
         try {
-          let m = store.db.mediuns.find((x) => x.ativo === 1 && x.nome.toLowerCase() === nome.toLowerCase());
+          let m = elegiveis.find((x) => x.nome.toLowerCase() === nome.toLowerCase());
           if (!m) {
-            m = await store.criar('mediuns', { nome, telefone: '', email: '', observacao: '', funcao: '', ativo: 1 });
+            m = await store.criar('mediuns', { nome, telefone: '', email: '', observacao: '', funcao: restrito ? 'Ajanã' : '', ativo: 1 });
           }
           await vincular(m.id);
         } catch (err) { toast(err.message, 'error'); }

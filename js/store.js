@@ -8,8 +8,15 @@ export const LEITO = 'LEITO';
 export const CONTEXTOS = { dirigentes: 'Escala de dirigentes', ajanas: 'Escala de Ajanãs' };
 // Funções/categorias do médium (Vale do Amanhecer)
 export const FUNCOES_MEDIUM = ['Doutrinador', 'Ajanã', 'Ninfa Lua', 'Ninfa Sol'];
-// Somente esta função participa da distribuição automática da escala de dirigentes
-export const FUNCAO_ESCALA_DIRIGENTES = 'Doutrinador';
+// Função exigida na distribuição automática de cada contexto
+export const FUNCAO_POR_CONTEXTO = { dirigentes: 'Doutrinador', ajanas: 'Ajanã' };
+
+
+
+// Marcador de leito: 'LEITO', 'Leito Externo', etc.
+export function ehLeito(obs) {
+  return /leito/i.test(obs ?? '');
+}
 
 // Trabalhos da grade mensal oficial (ordem das colunas na impressão)
 export const TRABALHOS_MODELO = [
@@ -18,6 +25,25 @@ export const TRABALHOS_MODELO = [
 ];
 // Dias de sessão padrão do modelo (0=Dom, 3=Qua, 6=Sáb)
 export const DIAS_SESSAO_MODELO = [0, 3, 6];
+
+// Modelo de grade (trabalhos, dias de sessão e horários padrão) por contexto
+export const MODELOS_GRADE = {
+  dirigentes: { trabalhos: TRABALHOS_MODELO, dias: DIAS_SESSAO_MODELO, hora: ['19:00', '21:00'], qtd: {} },
+  ajanas: {
+    trabalhos: ['Imunização', 'Cura', 'Defumação', 'Randy'],
+    dias: DIAS_SESSAO_MODELO, hora: ['19:00', '21:00'], qtd: { Randy: 2 },
+  },
+};
+
+// Cabeçalho/rodapé de impressão por contexto (modelo dos documentos oficiais)
+export const GRADE_CONFIG = {
+  dirigentes: { titulo: null, aviso: '', rodapeFixo: '' },
+  ajanas: {
+    titulo: 'TARAJO DO AMANHECER — ESCALA DOS AJANÃS',
+    aviso: 'APRESENTE-SE AO SEU COMANDANTE, NO DIA ESCALADO E CASO NÃO POSSA COMPARECER, SUBSTITUA ANTECIPADAMENTE!',
+    rodapeFixo: 'A tua consciência pura, tão somente, não te livrará da maldade dos olhos físicos. É caridade, também, dará satisfação do teu comportamento ao teu vizinho, que não conhece a tua consciência.! Tia Neiva / Humarran — ADJ. APARÃ K.108 MESTRE SIDNEY · ADJ TARAJO K 108 MESTRE JURANDIR',
+  },
+};
 
 const CHAVE = 'escalavale_db_v1';
 
@@ -189,6 +215,12 @@ export const store = {
   mediunsAtivos() {
     return this.db.mediuns.filter((m) => m.ativo === 1).sort((a, b) => a.nome.localeCompare(b.nome));
   },
+  // Montagem manual da escala: no contexto Ajanãs, só função Ajanã
+  mediunsParaMontagem(ctx = this.contextoAtual) {
+    const ativos = this.mediunsAtivos();
+    if (ctx === 'ajanas') return ativos.filter((m) => m.funcao === 'Ajanã');
+    return ativos;
+  },
   trabalhosAtivos(ctx = this.contextoAtual) {
     return this.db.trabalhos
       .filter((t) => t.ativo === 1 && (t.contexto ?? 'dirigentes') === ctx)
@@ -247,13 +279,14 @@ export const store = {
 
   // Cria os 10 trabalhos do modelo + horários nos dias de sessão (sem duplicar)
   async criarGradeModelo() {
+    const modelo = MODELOS_GRADE[this.contextoAtual] ?? MODELOS_GRADE.dirigentes;
     const horariosNovos = [];
-    for (const [idx, nome] of TRABALHOS_MODELO.entries()) {
+    for (const [idx, nome] of modelo.trabalhos.entries()) {
       let trab = this.db.trabalhos.find((t) => t.nome.toLowerCase() === nome.toLowerCase() && t.ativo === 1);
       if (!trab) {
-        trab = await this.criar('trabalhos', { nome, descricao: '', ativo: 1, ordem: idx * 10, qtd_mediuns: 1, contexto: this.contextoAtual });
+        trab = await this.criar('trabalhos', { nome, descricao: '', ativo: 1, ordem: idx * 10, qtd_mediuns: modelo.qtd[nome] ?? 1, contexto: this.contextoAtual });
       }
-      for (const dow of DIAS_SESSAO_MODELO) {
+      for (const dow of modelo.dias) {
         const existe = this.db.horarios.some((h) => h.trabalho_id === trab.id && h.dia_semana === dow);
         if (!existe) {
           horariosNovos.push({ trabalho_id: trab.id, dia_semana: dow, hora_inicio: '19:00', hora_fim: '21:00' });
@@ -262,7 +295,7 @@ export const store = {
     }
     await Promise.all(horariosNovos.map((h) => this.criar('horarios', h)));
     const renumerar = this.trabalhosAtivos().map((t) => {
-      const idxModelo = TRABALHOS_MODELO.findIndex((n) => n.toLowerCase() === t.nome.toLowerCase());
+      const idxModelo = modelo.trabalhos.findIndex((n) => n.toLowerCase() === t.nome.toLowerCase());
       const ordem = idxModelo >= 0 ? idxModelo * 10 : 1000 + (t.ordem ?? 0);
       return this.atualizar('trabalhos', t.id, { ordem });
     });
@@ -312,7 +345,7 @@ export const store = {
         if (faltam <= 0) continue;
         const ocupados = new Set(existentes.map((e) => e.medio_id));
         const candidatos = mediuns
-          .filter((m) => !ocupados.has(m.id) && m.funcao === FUNCAO_ESCALA_DIRIGENTES)
+          .filter((m) => !ocupados.has(m.id) && m.funcao === (FUNCAO_POR_CONTEXTO[ctx] ?? ''))
           .map((m) => ({ m, sorte: Math.random() }))
           .sort((a, b) => (vinculosNoMes(a.m.id) - vinculosNoMes(b.m.id)) || (a.sorte - b.sorte));
         let adicionados = 0;
@@ -324,6 +357,7 @@ export const store = {
             id: -(planejados.length + 1),
             medio_id: m.id, trabalho_id: t.id, data: d.iso,
             horario_id: ref.id, presente: 0, observacao: '',
+            contexto: ctx,
           };
           planejados.push(novo);
           this.db.escala.push(novo);
@@ -365,7 +399,7 @@ export function slotsDaData(dataISO, ctx = store.contextoAtual) {
   return horarios.map((h) => {
     const vinculos = lancamentos.filter((e) => e.horario_id === h.id && e.medio_id > 0);
     const esc = vinculos[0];
-    const temLeito = lancamentos.some((e) => e.horario_id === h.id && e.observacao === LEITO);
+    const temLeito = lancamentos.some((e) => e.horario_id === h.id && ehLeito(e.observacao));
     return {
       ...h,
       dia_semana: diaSemana,
@@ -387,7 +421,7 @@ export function celulaMensal(dataISO, trabalhoId, ctx = store.contextoAtual) {
   return {
     itens,
     nomes: itens.filter((e) => e.medio_id > 0).map((e) => store.nomeMedium(e.medio_id)),
-    temLeito: itens.some((e) => e.observacao === LEITO),
+    temLeito: itens.some((e) => ehLeito(e.observacao)),
   };
 }
 
