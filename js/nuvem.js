@@ -65,8 +65,8 @@ export async function excluir(tabela, id) {
   if (error) throw new Error(`Falha ao excluir: ${error.message}`);
 }
 
-export async function excluirCelula(dataISO, trabalhoId) {
-  const { error } = await supabase.from('escala').delete().match({ data: dataISO, trabalho_id: trabalhoId });
+export async function excluirCelula(dataISO, trabalhoId, ctx = 'dirigentes') {
+  const { error } = await supabase.from('escala').delete().match({ data: dataISO, trabalho_id: trabalhoId, contexto: ctx });
   if (error) throw new Error(`Falha ao limpar: ${error.message}`);
 }
 

@@ -303,3 +303,7 @@ table.grade td.vazia { background: #fafafa; }
 
 .hero-logo { text-align: center; margin-bottom: 14px; }
 .hero-logo img { border-radius: 16px; box-shadow: var(--shadow); max-width: 100%; height: auto; }
+
+.nav-group-toggle .caret { margin-left: auto; font-size: .75rem; }
+.nav-sub { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 2px 14px; padding-left: 10px; border-left: 2px solid rgba(255,255,255,.15); }
+.nav-item.sub { font-size: .88rem; padding: 8px 12px; }

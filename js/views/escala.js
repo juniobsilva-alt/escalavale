@@ -14,7 +14,7 @@ export function renderEscala(el, dataInicial) {
 
   el.innerHTML = `
     <div class="page-head">
-      <div><h1>Escala de dirigentes</h1><p>Atribua médiuns aos horários do dia ou monte a grade mensal para impressão.</p></div>
+      <div><h1>${store.nomeContexto()}</h1><p>Atribua médiuns aos horários do dia ou monte a grade mensal para impressão.</p></div>
     </div>
     <div class="tabs" role="tablist" aria-label="Modo da escala">
       <button class="tab is-active" data-aba="dia" role="tab" aria-selected="true">Por dia</button>
@@ -186,6 +186,7 @@ export function renderEscala(el, dataInicial) {
         <input type="month" id="f-mes" value="${mes}" aria-label="Mês da grade" />
         <span class="muted">${preenchidas}/${totalCelulas} células preenchidas</span>
         <div class="spacer"></div>
+        <button class="btn btn-sm" id="btn-distribuir">🎲 Distribuir Mediuns Automaticamente</button>
         <button class="btn btn-sm" id="btn-modelo">Criar grade modelo</button>
         <button class="btn btn-sm btn-primary" id="btn-imprimir">Imprimir</button>
       </div>
@@ -227,6 +228,7 @@ export function renderEscala(el, dataInicial) {
 
     area.querySelector('#f-mes').onchange = (e) => { mes = e.target.value || mes; desenharMensal(); };
     area.querySelector('#btn-imprimir').onclick = () => window.print();
+    area.querySelector('#btn-distribuir').onclick = () => abrirDistribuicao();
     area.querySelector('#btn-modelo').onclick = async (e) => {
       const btn = e.currentTarget;
       btn.disabled = true;
@@ -245,6 +247,56 @@ export function renderEscala(el, dataInicial) {
       desenharMensal();
     });
     area.querySelectorAll('.celula').forEach((b) => (b.onclick = () => abrirCelula(b.dataset.dia, Number(b.dataset.trab))));
+  }
+
+  // ---- Distribuição automática do mês ----
+  function abrirDistribuicao() {
+    const raiz = document.getElementById('modal-root');
+    raiz.innerHTML = `
+      <div class="modal-backdrop" id="dist-backdrop">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Distribuição automática">
+          <h2>Distribuir Mediuns Automaticamente</h2>
+          <p class="modal-sub">Sorteio com rodízio justo para ${MESES[mes.split('-')[1] - 1]} de ${mes.split('-')[0]}.</p>
+          <div class="alert info">Somente médiuns com função <strong>Doutrinador</strong>. Respeita <strong>disponibilidade</strong> e <strong>conflitos de horário</strong>. Pula células <strong>LEITO</strong> e trabalhos sem horário no dia.</div>
+          <div class="alert info">Quantidade por célula conforme o campo <strong>Quantidade de Mediuns</strong> de cada trabalho (menu Trabalhos).</div>
+          <div class="quick-actions" style="flex-direction:column;align-items:stretch">
+            <button class="btn btn-primary" id="d-vazias">Preencher células vazias</button>
+            <button class="btn" id="d-tudo">Limpar e redistribuir tudo</button>
+            <button class="btn btn-ghost" id="d-cancelar">Cancelar</button>
+          </div>
+        </div>
+      </div>`;
+
+    const fechar = (redesenhar = true) => { raiz.innerHTML = ''; document.removeEventListener('keydown', aoTecla); if (redesenhar) desenharMensal(); };
+    function aoTecla(e) { if (e.key === 'Escape') fechar(); }
+    document.addEventListener('keydown', aoTecla);
+    raiz.querySelector('#dist-backdrop').addEventListener('mousedown', (e) => { if (e.target.id === 'dist-backdrop') fechar(); });
+    raiz.querySelector('#d-cancelar').onclick = () => fechar();
+
+    async function executar(modo, btn) {
+      btn.disabled = true;
+      btn.textContent = 'Distribuindo…';
+      try {
+        const r = await store.distribuirAutomaticamente(mes, { modo });
+        let msg = `${r.preenchidas} célula(s) preenchida(s).`;
+        if (r.removidas) msg += ` ${r.removidas} vínculo(s) anterior(es) removido(s).`;
+        if (r.semHorario) msg += ` ${r.semHorario} sem horário cadastrado.`;
+        if (r.incompletas) msg += ` ${r.incompletas} parcial(is) (faltou doutrinador elegível).`;
+        if (r.semElegivel) msg += ` ${r.semElegivel} sem médium elegível (disponibilidade/conflito/função).`;
+        toast(msg, r.preenchidas ? 'success' : 'info');
+      } catch (err) {
+        toast(err.message, 'error');
+        fechar(false);
+        desenharMensal();
+        return;
+      }
+      fechar();
+    }
+    raiz.querySelector('#d-vazias').onclick = (e) => executar('vazias', e.currentTarget);
+    raiz.querySelector('#d-tudo').onclick = (e) => {
+      if (!confirm('Apagar todos os vínculos do mês e redistribuir do zero? (LEITO é mantido)')) return;
+      executar('tudo', e.currentTarget);
+    };
   }
 
   // ---- Modal da célula (vários médiuns + LEITO) ----

@@ -4,7 +4,7 @@ import { abrirModal, confirmarExclusao, toast, escapar, estadoVazio } from '../u
 export function renderTrabalhos(el) {
   el.innerHTML = `
     <div class="page-head">
-      <div><h1>Trabalhos</h1><p>Ex.: Presidente, Mesa Evang., Cura… A ordem aqui define as colunas da grade mensal.</p></div>
+      <div><h1>Trabalhos</h1><p>Ex.: Presidente, Mesa Evang., Cura… A ordem aqui define as colunas da grade mensal. Estes dados pertencem à <strong>${store.nomeContexto()}</strong>.</p></div>
       <div class="spacer"></div>
       <button class="btn btn-primary" id="btn-novo">+ Novo trabalho</button>
     </div>
@@ -28,13 +28,14 @@ export function renderTrabalhos(el) {
       return;
     }
     lista.innerHTML = `<div class="table-wrap"><table>
-      <thead><tr><th title="Ordem na grade mensal">Pos.</th><th>Nome</th><th class="wrap">Descrição</th><th>Horários</th><th>Ações</th></tr></thead>
+      <thead><tr><th title="Ordem na grade mensal">Pos.</th><th>Nome</th><th class="wrap">Descrição</th><th title="Médiuns por célula na distribuição">Qtd.</th><th>Horários</th><th>Ações</th></tr></thead>
       <tbody>${dados.map((t) => {
         const n = store.db.horarios.filter((h) => h.trabalho_id === t.id).length;
         const pos = todos.findIndex((x) => x.id === t.id);
         return `<tr><td><strong>#${pos + 1}</strong></td>
           <td><strong>${escapar(t.nome)}</strong></td>
           <td class="wrap">${escapar(t.descricao || '—')}</td>
+          <td><span class="pill info">${t.qtd_mediuns ?? 1}</span></td>
           <td><span class="pill info">${n}</span></td>
           <td><div class="row-actions">
             <button class="btn btn-sm" data-sobe="${t.id}" title="Mover para esquerda na grade" ${pos === 0 ? 'disabled' : ''}>↑</button>
@@ -73,15 +74,22 @@ export function renderTrabalhos(el) {
           <input id="f-nome" name="nome" required maxlength="100" value="${escapar(atual?.nome ?? '')}" />
           <p class="error">Informe o nome.</p></div>
         <div class="field"><label for="f-desc">Descrição</label>
-          <textarea id="f-desc" name="descricao" rows="3">${escapar(atual?.descricao ?? '')}</textarea></div>`,
+          <textarea id="f-desc" name="descricao" rows="3">${escapar(atual?.descricao ?? '')}</textarea></div>
+        <div class="field"><label for="f-qtd">Quantidade de Mediuns *</label>
+          <input id="f-qtd" name="qtd_mediuns" type="number" min="1" max="10" value="${atual?.qtd_mediuns ?? 1}" />
+          <p class="hint">Usada na distribuição automática do mês.</p>
+          <p class="error">Informe um valor de 1 a 10.</p></div>`,
       aoConfirmar: async (dados, form) => {
         const nome = dados.nome.trim();
         if (!nome) { form.querySelector('#f-nome').closest('.field').classList.add('invalid'); return false; }
+        const qtd = Math.max(1, Math.min(10, parseInt(dados.qtd_mediuns, 10) || 0));
+        if (!qtd) { form.querySelector('#f-qtd').closest('.field').classList.add('invalid'); return false; }
+        dados.qtd_mediuns = qtd;
         try {
           if (atual) await store.atualizar('trabalhos', atual.id, { ...dados, nome });
           else {
             const maxOrdem = Math.max(0, ...store.db.trabalhos.map((t) => t.ordem ?? 0));
-            await store.criar('trabalhos', { ativo: 1, ordem: maxOrdem + 10, ...dados, nome });
+            await store.criar('trabalhos', { ativo: 1, ordem: maxOrdem + 10, qtd_mediuns: 1, ...dados, nome });
           }
         } catch (err) { toast(err.message, 'error'); return false; }
         desenhar(); toast('Trabalho salvo.');

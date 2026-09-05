@@ -5,7 +5,7 @@ export function renderHorarios(el) {
   const trabalhos = store.trabalhosAtivos();
   el.innerHTML = `
     <div class="page-head">
-      <div><h1>Horários</h1><p>Defina dia da semana e hora de cada trabalho.</p></div>
+      <div><h1>Horários</h1><p>Defina dia da semana e hora de cada trabalho. Válidos somente para a <strong>${store.nomeContexto()}</strong>.</p></div>
       <div class="spacer"></div>
       <button class="btn btn-primary" id="btn-novo">+ Novo horário</button>
     </div>

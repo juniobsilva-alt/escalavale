@@ -29,20 +29,23 @@
         <button class="nav-item is-active" data-route="dashboard" aria-current="page">
           <span aria-hidden="true">◧</span> Início
         </button>
-        <button class="nav-item" data-route="escala">
-          <span aria-hidden="true">◐</span> Escala de dirigentes
-        </button>
         <button class="nav-item" data-route="mediuns">
           <span aria-hidden="true">○</span> Médiuns
         </button>
-        <button class="nav-item" data-route="trabalhos">
-          <span aria-hidden="true">⬔</span> Trabalhos
-        </button>
-        <button class="nav-item" data-route="horarios">
-          <span aria-hidden="true">◷</span> Horários
-        </button>
-        <button class="nav-item" data-route="disponibilidade">
-          <span aria-hidden="true">▦</span> Disponibilidade
+        <div class="nav-group">
+          <button class="nav-item nav-group-toggle" data-group="dirigentes" aria-expanded="true">
+            <span aria-hidden="true">◐</span> Escala de dirigentes
+            <span class="caret" aria-hidden="true">▾</span>
+          </button>
+          <div class="nav-sub" id="sub-dirigentes">
+            <button class="nav-item sub" data-route="escala">Grade</button>
+            <button class="nav-item sub" data-route="dir-trabalhos">Trabalhos</button>
+            <button class="nav-item sub" data-route="dir-horarios">Horários</button>
+            <button class="nav-item sub" data-route="dir-disponibilidade">Disponibilidade</button>
+          </div>
+        </div>
+        <button class="nav-item" data-route="ajanas">
+          <span aria-hidden="true">☾</span> Escala de Ajanãs
         </button>
       </nav>
       <div class="sidebar-footer">

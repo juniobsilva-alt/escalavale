@@ -6,29 +6,46 @@ import { renderTrabalhos } from './views/trabalhos.js';
 import { renderHorarios } from './views/horarios.js';
 import { renderEscala } from './views/escala.js';
 import { renderDisponibilidade } from './views/disponibilidade.js';
+import { renderAjanas } from './views/ajanas.js';
 import { renderLogin } from './views/auth.js';
 
 const conteudo = document.getElementById('conteudo');
 let rotaAtual = 'dashboard';
 let apiEscala = null;
 
+const CONTEXTO_POR_ROTA = {
+  escala: 'dirigentes',
+  'dir-trabalhos': 'dirigentes',
+  'dir-horarios': 'dirigentes',
+  'dir-disponibilidade': 'dirigentes',
+  ajanas: 'ajanas',
+};
+
 const ROTAS = {
   dashboard: (el) => renderDashboard(el, navegar),
   mediuns: renderMediuns,
-  trabalhos: renderTrabalhos,
-  horarios: renderHorarios,
   escala: (el) => { apiEscala = renderEscala(el, document.getElementById('atalho-data').value || hojeISO()); },
-  disponibilidade: renderDisponibilidade,
+  'dir-trabalhos': renderTrabalhos,
+  'dir-horarios': renderHorarios,
+  'dir-disponibilidade': renderDisponibilidade,
+  ajanas: renderAjanas,
 };
 
 function navegar(rota) {
   rotaAtual = rota;
-  document.querySelectorAll('.nav-item').forEach((b) => {
+  if (CONTEXTO_POR_ROTA[rota]) store.contextoAtual = CONTEXTO_POR_ROTA[rota];
+  document.querySelectorAll('.nav-item[data-route]').forEach((b) => {
     const ativa = b.dataset.route === rota;
     b.classList.toggle('is-active', ativa);
     if (ativa) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
   });
+  const noGrupo = ['escala', 'dir-trabalhos', 'dir-horarios', 'dir-disponibilidade'].includes(rota);
+  const toggle = document.querySelector('[data-group="dirigentes"]');
+  if (toggle && noGrupo) {
+    toggle.setAttribute('aria-expanded', 'true');
+    document.getElementById('sub-dirigentes').style.display = '';
+  }
   document.body.classList.remove('menu-open');
   (ROTAS[rota] || ROTAS.dashboard)(conteudo);
   conteudo.focus({ preventScroll: true });
@@ -65,6 +82,13 @@ async function boot() {
 function montarApp(email) {
   document.querySelectorAll('.nav-item').forEach((b) => (b.onclick = () => navegar(b.dataset.route)));
 
+  document.querySelector('[data-group="dirigentes"]').onclick = (e) => {
+    const btn = e.currentTarget;
+    const aberta = btn.getAttribute('aria-expanded') === 'true';
+    btn.setAttribute('aria-expanded', aberta ? 'false' : 'true');
+    document.getElementById('sub-dirigentes').style.display = aberta ? 'none' : '';
+  };
+
   document.getElementById('btn-menu').onclick = () => document.body.classList.toggle('menu-open');
   document.getElementById('sidebar-backdrop').onclick = () => document.body.classList.remove('menu-open');
 
@@ -84,7 +108,7 @@ function montarApp(email) {
     const termo = e.target.value.trim().toLowerCase();
     if (!termo) return;
     const achouMedium = store.mediunsAtivos().some((m) => m.nome.toLowerCase().includes(termo));
-    navegar(achouMedium ? 'mediuns' : 'trabalhos');
+    navegar(achouMedium ? 'mediuns' : 'dir-trabalhos');
     toast(achouMedium ? 'Médium encontrado — use o filtro da página.' : 'Buscando em Trabalhos — use o filtro da página.', 'info');
   });
 

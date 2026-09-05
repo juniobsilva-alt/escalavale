@@ -81,3 +81,12 @@ memória e delega `criar/atualizar/excluir` ao backend ativo (Supabase ou localS
 Na nuvem, `medio_id`/`horario_id` zerados (ex.: LEITO) são gravados como `NULL`
 (FK anulável). O botão **Importar** aparece só no modo local; na nuvem, restauração
 de backup é via SQL no painel do Supabase.
+
+## Contextos de escala (dirigentes / ajanãs)
+
+Trabalhos, horários, escala, disponibilidade e avisos pertencem a um **contexto**
+(`dirigentes` ou `ajanas`). O menu tem o grupo **Escala de dirigentes**
+(Grade, Trabalhos, Horários, Disponibilidade) e a **Escala de Ajanãs** logo abaixo.
+Médiuns são cadastro único global. Dados legados migram sozinhos para `dirigentes`.
+
+Antes de usar esta versão na nuvem, rode `supabase/migracao-contexto.sql` no SQL Editor.

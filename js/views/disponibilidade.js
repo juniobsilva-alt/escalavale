@@ -7,7 +7,7 @@ export function renderDisponibilidade(el) {
 
   el.innerHTML = `
     <div class="page-head">
-      <div><h1>Disponibilidade</h1><p>Regras do tipo “1ª Quarta”, “Último Sábado”. Sem regra = disponibilidade total.</p></div>
+      <div><h1>Disponibilidade</h1><p>Regras do tipo “1ª Quarta”, “Último Sábado”. Sem regra = disponibilidade total. Regras válidas somente para a <strong>${store.nomeContexto()}</strong>.</p></div>
     </div>
     <div class="toolbar">
       <select id="f-medium" aria-label="Selecionar médium">
