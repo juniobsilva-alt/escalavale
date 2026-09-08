@@ -192,6 +192,7 @@ export function renderEscala(el, dataInicial) {
         <input type="month" id="f-mes" value="${mes}" aria-label="Mês da grade" />
         <span class="muted">${preenchidas}/${totalCelulas} células preenchidas</span>
         <div class="spacer"></div>
+        <button class="btn btn-sm" id="btn-limpar-grade">Limpar grade</button>
         <button class="btn btn-sm" id="btn-distribuir">🎲 Distribuir Mediuns Automaticamente</button>
         <button class="btn btn-sm" id="btn-modelo">Criar grade modelo</button>
         <button class="btn btn-sm btn-primary" id="btn-imprimir">Imprimir</button>
@@ -239,6 +240,21 @@ export function renderEscala(el, dataInicial) {
 
     area.querySelector('#f-mes').onchange = (e) => { mes = e.target.value || mes; desenharMensal(); };
     area.querySelector('#btn-imprimir').onclick = () => window.print();
+    area.querySelector('#btn-limpar-grade').onclick = async (e) => {
+      const btn = e.currentTarget;
+      const total = store.db.escala.filter((em) =>
+        em.data.startsWith(mes) && (em.contexto ?? 'dirigentes') === store.contextoAtual && em.medio_id > 0).length;
+      if (!total) { toast('A grade deste mês já está vazia.', 'info'); return; }
+      if (!confirm(`Remover os ${total} vínculo(s) de ${MESES[mes.split('-')[1] - 1]} de ${mes.split('-')[0]}? (LEITO é mantido)`)) return;
+      btn.disabled = true;
+      try {
+        const n = await store.limparMes(mes);
+        toast(`${n} vínculo(s) removido(s). Grade pronta para nova montagem.`);
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+      desenharMensal();
+    };
     area.querySelector('#btn-distribuir').onclick = () => abrirDistribuicao();
     area.querySelector('#btn-modelo').onclick = async (e) => {
       const btn = e.currentTarget;

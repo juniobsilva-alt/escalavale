@@ -202,6 +202,20 @@ export const store = {
     if (this.modo === 'local') this.salvarLocal();
   },
 
+  // Remove todos os médiuns escalados no mês (mantém marcadores LEITO)
+  async limparMes(mesChave, ctx = this.contextoAtual) {
+    const alvos = this.db.escala.filter((e) =>
+      e.data.startsWith(mesChave) && (e.contexto ?? 'dirigentes') === ctx && e.medio_id > 0);
+    if (this.modo === 'nuvem' && alvos.length) {
+      const { excluir } = await nuvem();
+      await Promise.all(alvos.map((e) => excluir('escala', e.id)));
+    }
+    const ids = new Set(alvos.map((e) => e.id));
+    this.db.escala = this.db.escala.filter((e) => !ids.has(e.id));
+    if (this.modo === 'local') this.salvarLocal();
+    return alvos.length;
+  },
+
   async excluirCelula(dataISO, trabalhoId) {
     if (this.modo === 'nuvem') {
       const { excluirCelula } = await nuvem();
