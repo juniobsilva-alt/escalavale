@@ -1,4 +1,4 @@
-import { store } from '../store.js';
+import { store, GRADES_AJANAS } from '../store.js';
 import { abrirModal, confirmarExclusao, toast, escapar, estadoVazio } from '../utils.js';
 
 export function renderTrabalhos(el) {
@@ -17,6 +17,12 @@ export function renderTrabalhos(el) {
   const lista = el.querySelector('#lista');
   const filtro = el.querySelector('#filtro');
 
+  const ehAjan = () => store.contextoAtual === 'ajanas';
+  const rotuloGrade = (t) => {
+    const g = store.gradeDoTrabalho(t);
+    return g ? (GRADES_AJANAS[g]?.titulo ?? g) : 'Todas';
+  };
+
   function desenhar() {
     const termo = filtro.value.trim().toLowerCase();
     const todos = store.trabalhosAtivos();
@@ -28,7 +34,7 @@ export function renderTrabalhos(el) {
       return;
     }
     lista.innerHTML = `<div class="table-wrap"><table>
-      <thead><tr><th title="Ordem na grade mensal">Pos.</th><th>Nome</th><th class="wrap">Descrição</th><th title="Médiuns por célula na distribuição">Qtd.</th><th>Horários</th><th>Ações</th></tr></thead>
+      <thead><tr><th title="Ordem na grade mensal">Pos.</th><th>Nome</th><th class="wrap">Descrição</th><th title="Médiuns por célula na distribuição">Qtd.</th>${ehAjan ? '<th>Grade</th>' : ''}<th>Horários</th><th>Ações</th></tr></thead>
       <tbody>${dados.map((t) => {
         const n = store.db.horarios.filter((h) => h.trabalho_id === t.id).length;
         const pos = todos.findIndex((x) => x.id === t.id);
@@ -36,6 +42,7 @@ export function renderTrabalhos(el) {
           <td><strong>${escapar(t.nome)}</strong></td>
           <td class="wrap">${escapar(t.descricao || '—')}</td>
           <td><span class="pill info">${t.qtd_mediuns ?? 1}</span></td>
+          ${ehAjan() ? `<td><span class="pill ${store.gradeDoTrabalho(t) ? 'info' : 'muted'}">${escapar(rotuloGrade(t))}</span></td>` : ''}
           <td><span class="pill info">${n}</span></td>
           <td><div class="row-actions">
             <button class="btn btn-sm" data-sobe="${t.id}" title="Mover para esquerda na grade" ${pos === 0 ? 'disabled' : ''}>↑</button>
@@ -75,6 +82,12 @@ export function renderTrabalhos(el) {
           <p class="error">Informe o nome.</p></div>
         <div class="field"><label for="f-desc">Descrição</label>
           <textarea id="f-desc" name="descricao" rows="3">${escapar(atual?.descricao ?? '')}</textarea></div>
+        ${store.contextoAtual === 'ajanas' ? `<div class="field"><label for="f-grade">Grade</label>
+          <select id="f-grade" name="grade">
+            <option value="">(Todas as grades)</option>
+            ${Object.entries(GRADES_AJANAS).map(([k, g]) => `<option value="${k}" ${atual?.grade === k ? 'selected' : ''}>${g.titulo}</option>`).join('')}
+          </select>
+          <p class="hint">O trabalho participa apenas da grade selecionada.</p></div>` : ''}
         <div class="field"><label for="f-qtd">Quantidade de Mediuns *</label>
           <input id="f-qtd" name="qtd_mediuns" type="number" min="1" max="10" value="${atual?.qtd_mediuns ?? 1}" />
           <p class="hint">Usada na distribuição automática do mês.</p>
@@ -85,6 +98,7 @@ export function renderTrabalhos(el) {
         const qtd = Math.max(1, Math.min(10, parseInt(dados.qtd_mediuns, 10) || 0));
         if (!qtd) { form.querySelector('#f-qtd').closest('.field').classList.add('invalid'); return false; }
         dados.qtd_mediuns = qtd;
+        if (!Object.hasOwn(dados, 'grade') || dados.grade === '') dados.grade = null;
         try {
           if (atual) await store.atualizar('trabalhos', atual.id, { ...dados, nome });
           else {

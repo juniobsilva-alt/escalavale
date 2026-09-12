@@ -26,12 +26,21 @@ export const TRABALHOS_MODELO = [
 // Dias de sessão padrão do modelo (0=Dom, 3=Qua, 6=Sáb)
 export const DIAS_SESSAO_MODELO = [0, 3, 6];
 
+// Grades da Escala de Ajanãs: cada trabalho pertence a uma delas (campo grade)
+export const GRADES_AJANAS = {
+  'aj-grade': { titulo: 'Grade Templo', trabalhos: ['Imunização', 'Cura', 'Defumação', 'Randy 1', 'Randy 2'], qtd: {} },
+  'aj-oraculo': { titulo: 'Grade Oráculo', trabalhos: ['Oráculo'], qtd: { Oráculo: 2 } },
+  'aj-libertacao': { titulo: 'Grade Libertação', trabalhos: ['Libertação'], qtd: {} },
+  'aj-sanday': { titulo: 'Grade Sanday Tronos', trabalhos: ['Sanday de Tronos'], qtd: { 'Sanday de Tronos': 3 } },
+  'aj-sublimacao': { titulo: 'Grade Sublimação e Turigano', trabalhos: ['Estrela Sublimação', 'Turigano'], qtd: {} },
+};
+
 // Modelo de grade (trabalhos, dias de sessão e horários padrão) por contexto
 export const MODELOS_GRADE = {
   dirigentes: { trabalhos: TRABALHOS_MODELO, dias: DIAS_SESSAO_MODELO, hora: ['19:00', '21:00'], qtd: {} },
   ajanas: {
-    trabalhos: ['Imunização', 'Cura', 'Defumação', 'Randy'],
-    dias: DIAS_SESSAO_MODELO, hora: ['19:00', '21:00'], qtd: { Randy: 2 },
+    trabalhos: ['Imunização', 'Cura', 'Defumação', 'Randy 1', 'Randy 2'],
+    dias: DIAS_SESSAO_MODELO, hora: ['19:00', '21:00'], qtd: {},
   },
 };
 
@@ -39,7 +48,7 @@ export const MODELOS_GRADE = {
 export const GRADE_CONFIG = {
   dirigentes: { titulo: null, aviso: '', rodapeFixo: '' },
   ajanas: {
-    titulo: 'TARAJO DO AMANHECER — ESCALA DOS AJANÃS',
+    titulo: 'TARAJO DO AMANHECER',
     aviso: 'APRESENTE-SE AO SEU COMANDANTE, NO DIA ESCALADO E CASO NÃO POSSA COMPARECER, SUBSTITUA ANTECIPADAMENTE!',
     rodapeFixo: 'A tua consciência pura, tão somente, não te livrará da maldade dos olhos físicos. É caridade, também, dará satisfação do teu comportamento ao teu vizinho, que não conhece a tua consciência.! Tia Neiva / Humarran — ADJ. APARÃ K.108 MESTRE SIDNEY · ADJ TARAJO K 108 MESTRE JURANDIR',
   },
@@ -84,7 +93,20 @@ function migrar(db) {
   db.escala ??= [];
   db.disponibilidade ??= [];
   db.notas_mensais ??= {};
-  for (const t of db.trabalhos) if (t.contexto == null) t.contexto = 'dirigentes';
+  for (const t of db.trabalhos) {
+    if (t.contexto == null) t.contexto = 'dirigentes';
+    if ((t.contexto ?? 'dirigentes') === 'ajanas' && (t.nome ?? '').toLowerCase() === 'randy') {
+      t.nome = 'Randy 1';
+      t.qtd_mediuns = 1;
+      t.grade = 'aj-grade';
+    }
+    if (t.grade == null && (t.contexto ?? 'dirigentes') === 'ajanas') {
+      const nome = (t.nome ?? '').toLowerCase();
+      for (const [gk, gd] of Object.entries(GRADES_AJANAS)) {
+        if (gd.trabalhos.some((n) => n.toLowerCase() === nome)) { t.grade = gk; break; }
+      }
+    }
+  }
   for (const e of db.escala) if (e.contexto == null) e.contexto = 'dirigentes';
   for (const d of db.disponibilidade) if (d.contexto == null) d.contexto = 'dirigentes';
   for (const chave of Object.keys(db.notas_mensais)) {
@@ -203,9 +225,10 @@ export const store = {
   },
 
   // Remove todos os médiuns escalados no mês (mantém marcadores LEITO)
-  async limparMes(mesChave, ctx = this.contextoAtual) {
+  async limparMes(mesChave, ctx = this.contextoAtual, trabalhoIds = null) {
     const alvos = this.db.escala.filter((e) =>
-      e.data.startsWith(mesChave) && (e.contexto ?? 'dirigentes') === ctx && e.medio_id > 0);
+      e.data.startsWith(mesChave) && (e.contexto ?? 'dirigentes') === ctx && e.medio_id > 0 &&
+      (!trabalhoIds || trabalhoIds.includes(e.trabalho_id)));
     if (this.modo === 'nuvem' && alvos.length) {
       const { excluir } = await nuvem();
       await Promise.all(alvos.map((e) => excluir('escala', e.id)));
@@ -242,6 +265,15 @@ export const store = {
   },
   trabalhoContexto(trabalhoId) {
     return this.db.trabalhos.find((t) => t.id === trabalhoId)?.contexto ?? 'dirigentes';
+  },
+  // Grade do trabalho (só Ajanãs): campo grade ou dedução pelo nome; null = todas
+  gradeDoTrabalho(t) {
+    if (t.grade) return t.grade;
+    const nome = (t.nome ?? '').toLowerCase();
+    for (const [gk, gd] of Object.entries(GRADES_AJANAS)) {
+      if (gd.trabalhos.some((n) => n.toLowerCase() === nome)) return gk;
+    }
+    return null;
   },
   nomeMedium(id) {
     return this.db.mediuns.find((m) => m.id === id)?.nome ?? '—';
@@ -298,7 +330,7 @@ export const store = {
     for (const [idx, nome] of modelo.trabalhos.entries()) {
       let trab = this.db.trabalhos.find((t) => t.nome.toLowerCase() === nome.toLowerCase() && t.ativo === 1);
       if (!trab) {
-        trab = await this.criar('trabalhos', { nome, descricao: '', ativo: 1, ordem: idx * 10, qtd_mediuns: modelo.qtd[nome] ?? 1, contexto: this.contextoAtual });
+        trab = await this.criar('trabalhos', { nome, descricao: '', ativo: 1, ordem: idx * 10, qtd_mediuns: modelo.qtd[nome] ?? 1, contexto: this.contextoAtual, grade: this.contextoAtual === 'ajanas' ? 'aj-grade' : null });
       }
       for (const dow of modelo.dias) {
         const existe = this.db.horarios.some((h) => h.trabalho_id === trab.id && h.dia_semana === dow);
@@ -319,10 +351,10 @@ export const store = {
   // Distribui médiuns aleatoriamente nas células do mês, respeitando
   // disponibilidade, conflitos de horário e pulando células LEITO / sem horário.
   // modo: 'vazias' (só preenche células vazias) | 'tudo' (limpa e redistribui)
-  async distribuirAutomaticamente(mesChave, { modo = 'vazias', porCelula = null } = {}) {
+  async distribuirAutomaticamente(mesChave, { modo = 'vazias', porCelula = null, trabalhoIds = null } = {}) {
     const [ano, mesNum] = mesChave.split('-').map(Number);
-    const dias = diasDeSessaoDoMes(ano, mesNum);
-    const trabalhos = this.trabalhosAtivos();
+    const trabalhos = this.trabalhosAtivos().filter((t) => !trabalhoIds || trabalhoIds.includes(t.id));
+    const dias = diasDeSessaoDoMes(ano, mesNum, this.contextoAtual, trabalhos.map((t) => t.id));
     const mediuns = this.mediunsAtivos();
     const resumo = { preenchidas: 0, incompletas: 0, semHorario: 0, semElegivel: 0, removidas: 0, celulas: 0 };
     const idsRemover = [];
@@ -440,9 +472,9 @@ export function celulaMensal(dataISO, trabalhoId, ctx = store.contextoAtual) {
 }
 
 // Datas de sessão do mês: dias que têm ao menos 1 horário cadastrado
-export function diasDeSessaoDoMes(ano, mes1a12, ctx = store.contextoAtual) {
+export function diasDeSessaoDoMes(ano, mes1a12, ctx = store.contextoAtual, trabalhoIds = null) {
   const diasComHorario = new Set(store.db.horarios
-    .filter((h) => store.trabalhoContexto(h.trabalho_id) === ctx)
+    .filter((h) => store.trabalhoContexto(h.trabalho_id) === ctx && (!trabalhoIds || trabalhoIds.includes(h.trabalho_id)))
     .map((h) => h.dia_semana));
   const ultimo = new Date(ano, mes1a12, 0).getDate();
   const dias = [];

@@ -2,23 +2,62 @@ import {
   store, slotsDaData, celulaMensal, diasDeSessaoDoMes,
   haConflitoHorario, mediumDisponivelNaData,
   DIAS_SEMANA, DIAS_CURTO, MESES, SITUACAO, LEITO,
-  MODELOS_GRADE, GRADE_CONFIG, FUNCAO_POR_CONTEXTO,
+  MODELOS_GRADE, GRADE_CONFIG, FUNCAO_POR_CONTEXTO, GRADES_AJANAS,
 } from '../store.js';
 import { hojeISO, formatarData, diaSemanaDe, escapar, toast, pillSituacao, estadoVazio } from '../utils.js';
 
-export function renderEscala(el, dataInicial) {
-  let aba = 'dia';
+const GRADES = GRADES_AJANAS;
+
+export function renderEscala(el, dataInicial, gradeKey = null) {
+  const grade = gradeKey ? GRADES[gradeKey] : null;
+  window.__orientacaoImpressao = gradeKey === 'aj-grade' ? 'portrait' : 'landscape';
+  let aba = 'mensal';
   let dataISO = dataInicial || hojeISO();
   let mes = dataISO.slice(0, 7);
   let selecionado = -1;
 
+  const ABREV_MES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  const ehBimestral = () => !!grade && store.contextoAtual === 'ajanas';
+  function proximoMes(m) {
+    let [a, n] = m.split('-').map(Number);
+    n += 1;
+    if (n > 12) { n = 1; a += 1; }
+    return `${a}-${String(n).padStart(2, '0')}`;
+  }
+  function mesesDaGrade() {
+    return ehBimestral() ? [mes, proximoMes(mes)] : [mes];
+  }
+  function rotuloPeriodo() {
+    const mms = mesesDaGrade();
+    const [a1, n1] = mms[0].split('-').map(Number);
+    if (mms.length === 1) return `${MESES[n1 - 1]} de ${a1}`;
+    const [a2, n2] = mms[1].split('-').map(Number);
+    return a1 === a2 ? `${MESES[n1 - 1]} e ${MESES[n2 - 1]} de ${a1}` : `${MESES[n1 - 1]} de ${a1} e ${MESES[n2 - 1]} de ${a2}`;
+  }
+
+  function trabalhosDaGrade() {
+    const todos = store.trabalhosAtivos();
+    if (!grade) return todos;
+    const ordem = grade.trabalhos.map((n) => n.toLowerCase());
+    return todos
+      .filter((t) => {
+        const g = store.gradeDoTrabalho(t);
+        return g === null || g === gradeKey;
+      })
+      .sort((a, b) => {
+        const ia = ordem.indexOf(a.nome.toLowerCase());
+        const ib = ordem.indexOf(b.nome.toLowerCase());
+        return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || (a.ordem ?? 9999) - (b.ordem ?? 9999);
+      });
+  }
+
   el.innerHTML = `
     <div class="page-head no-print">
-      <div><h1>${store.nomeContexto()}</h1><p>Atribua médiuns aos horários do dia ou monte a grade mensal para impressão.</p></div>
+      <div><h1>${grade ? grade.titulo : store.nomeContexto()}</h1><p>Atribua médiuns aos horários do dia ou monte a grade mensal para impressão.${grade ? ` ${store.nomeContexto()}.` : ''}</p></div>
     </div>
     <div class="tabs" role="tablist" aria-label="Modo da escala">
-      <button class="tab is-active" data-aba="dia" role="tab" aria-selected="true">Por dia</button>
-      <button class="tab" data-aba="mensal" role="tab" aria-selected="false">Grade mensal</button>
+      <button class="tab is-active" data-aba="mensal" role="tab" aria-selected="true">Grade mensal</button>
+      <button class="tab" data-aba="dia" role="tab" aria-selected="false">Por dia</button>
     </div>
     <div id="conteudo-escala"></div>`;
 
@@ -54,7 +93,8 @@ export function renderEscala(el, dataInicial) {
     area.querySelector('#btn-hoje').onclick = () => { dataISO = hojeISO(); selecionado = -1; desenharDia(); };
     area.querySelector('#btn-imprimir').onclick = () => window.print();
 
-    const slots = slotsDaData(dataISO);
+    const idsGrade = grade ? trabalhosDaGrade().map((t) => t.id) : null;
+    const slots = slotsDaData(dataISO).filter((sl) => !idsGrade || idsGrade.includes(sl.trabalho_id));
     const dia = DIAS_SEMANA[diaSemanaDe(dataISO)];
     const mediuns = store.mediunsParaMontagem();
     const restrito = store.contextoAtual === 'ajanas';
@@ -172,9 +212,13 @@ export function renderEscala(el, dataInicial) {
 
   // ============================ GRADE MENSAL ============================
   function desenharMensal() {
-    const [ano, mesNum] = mes.split('-').map(Number);
-    const trabalhos = store.trabalhosAtivos();
-    const dias = diasDeSessaoDoMes(ano, mesNum);
+    const mms = mesesDaGrade();
+    const trabalhos = trabalhosDaGrade();
+    const idsGrade = grade ? trabalhos.map((t) => t.id) : null;
+    const dias = mms.flatMap((mm) => {
+      const [a, n] = mm.split('-').map(Number);
+      return diasDeSessaoDoMes(a, n, store.contextoAtual, idsGrade);
+    });
     const totalCelulas = dias.length * trabalhos.length;
     const preenchidas = dias.reduce((acc, d) => acc + trabalhos.filter((t) => {
       const c = celulaMensal(d.iso, t.id);
@@ -183,8 +227,9 @@ export function renderEscala(el, dataInicial) {
 
     const modelo = MODELOS_GRADE[store.contextoAtual] ?? MODELOS_GRADE.dirigentes;
     const cfg = GRADE_CONFIG[store.contextoAtual] ?? GRADE_CONFIG.dirigentes;
-    const faltamTrabalhos = modelo.trabalhos.filter((n) =>
-      !store.db.trabalhos.some((t) => t.ativo === 1 && t.nome.toLowerCase() === n.toLowerCase()));
+    const listaGrade = grade ? grade.trabalhos : modelo.trabalhos;
+    const faltamTrabalhos = listaGrade.filter((n) =>
+      !store.db.trabalhos.some((t) => t.ativo === 1 && (t.contexto ?? 'dirigentes') === store.contextoAtual && t.nome.toLowerCase() === n.toLowerCase()));
     const diasSessao = [...new Set(store.db.horarios.map((h) => h.dia_semana))].sort();
 
     area.innerHTML = `
@@ -206,16 +251,20 @@ export function renderEscala(el, dataInicial) {
           <li>${store.mediunsAtivos().length > 0 ? '✅' : '⬜'} <strong>Médiuns (nomes):</strong> ${store.mediunsAtivos().length} ativo(s). Dá para cadastrar na hora, clicando na célula.</li>
         </ul>
         <p class="muted">O botão <strong>Criar grade modelo</strong> cadastra os trabalhos (${modelo.trabalhos.join(', ')}) e os horários de Qua/Sáb/Dom (19h–21h) sem duplicar o que já existe.</p>
+        ${faltamTrabalhos.length ? `<button class="btn btn-primary btn-sm" id="btn-criar-grade">Criar trabalhos desta grade (${faltamTrabalhos.join(', ')})</button>` : ''}
       </div>` : ''}
-      ${cfg.titulo ? `<h2 class="titulo-grade">${cfg.titulo}</h2><h3 class="titulo-grade-sub">ESCALA DOS AJANÃS — ${MESES[mesNum - 1].toUpperCase()} DE ${ano}</h3>` : ''}
+      ${cfg.titulo ? `<h2 class="titulo-grade titulo-tarajo">${cfg.titulo}</h2><h3 class="titulo-grade-sub">ESCALA DOS AJANÃS${grade && gradeKey !== 'aj-grade' ? ' — ' + grade.titulo.toUpperCase() : ''} — ${rotuloPeriodo().toUpperCase()}</h3>` : ''}
       ${cfg.aviso ? `<p class="aviso-grade">${cfg.aviso}</p>` : ''}
-      <h2 class="titulo-grade">Escala de trabalho do mês de ${MESES[mesNum - 1]} de ${ano}</h2>
-      ${trabalhos.length === 0 || dias.length === 0 ? estadoVazio({ icone: '📅', titulo: 'Grade vazia', descricao: 'Complete os itens acima para gerar a grade.' }) : `
+      ${gradeKey === 'aj-grade' ? '' : `<h2 class="titulo-grade">${ehBimestral() ? 'Escala de trabalho' : 'Escala de trabalho do mês'} de ${rotuloPeriodo()}</h2>`}
+      ${trabalhos.length === 0 || dias.length === 0 ? estadoVazio({
+        icone: '📅', titulo: 'Grade vazia', descricao: 'Complete os itens acima para gerar a grade.',
+        acaoHTML: faltamTrabalhos.length ? `<button class="btn btn-primary btn-sm" id="vazio-criar">Criar trabalhos desta grade</button>` : '',
+      }) : `
       <div class="table-wrap grade-wrap"><table class="grade">
         <thead><tr><th class="col-dia">DIA</th>${trabalhos.map((t) => `<th>${escapar(t.nome)}</th>`).join('')}</tr></thead>
         <tbody>
           ${dias.map((d) => `<tr>
-            <td class="col-dia"><strong>${d.dia}-${DIAS_CURTO[d.dow].toLowerCase()}</strong><br/><small>${DIAS_CURTO[d.dow].toUpperCase()}</small></td>
+            <td class="col-dia"><strong>${DIAS_CURTO[d.dow]} ${String(d.dia).padStart(2, '0')}/${(() => { const m = ABREV_MES[Number(d.iso.slice(5, 7)) - 1]; return m[0].toUpperCase() + m.slice(1); })()}</strong></td>
             ${trabalhos.map((t) => {
               const semGrade = store.horariosDoTrabalhoNoDia(t.id, d.dow).length === 0;
               if (semGrade) return `<td class="fora-grade"><span class="muted">—</span></td>`;
@@ -228,27 +277,57 @@ export function renderEscala(el, dataInicial) {
           </tr>`).join('')}
         </tbody>
       </table></div>
-      <p class="rodape-grade" id="rodape-grade">${escapar(store.notaDoMes(mes))}</p>
+      <p class="rodape-grade" id="rodape-grade">${mms.map((mm) => escapar(store.notaDoMes(mm))).filter(Boolean).join(' | ')}</p>
       ${cfg.rodapeFixo ? `<p class="rodape-fixo">${escapar(cfg.rodapeFixo)}</p>` : ''}
       <div class="card no-print">
         <h3>Avisos do rodapé</h3>
         <p class="muted">Ex.: Aramê: 20 &nbsp;|&nbsp; Angical: 15 &nbsp;|&nbsp; Julgamento: NT &nbsp;|&nbsp; Sessão Branca: 22 &nbsp;|&nbsp; Turigano: 14, 21, 28 &nbsp;|&nbsp; Leito Magnético: 03, 24</p>
-        <div class="field"><label for="f-nota">Texto do rodapé de ${MESES[mesNum - 1]} de ${ano}</label>
-        <textarea id="f-nota" rows="2">${escapar(store.notaDoMes(mes))}</textarea></div>
+        ${mms.map((mm) => {
+          const [a, n] = mm.split('-').map(Number);
+          return `<div class="field"><label for="f-nota-${mm}">Texto do rodapé de ${MESES[n - 1]} de ${a}</label>
+          <textarea id="f-nota-${mm}" rows="2">${escapar(store.notaDoMes(mm))}</textarea></div>`;
+        }).join('')}
         <button class="btn btn-primary btn-sm" id="btn-nota">Salvar avisos</button>
       </div>`}`;
 
+    async function criarTrabalhosDaGrade(btn) {
+      const maxOrdem = Math.max(0, ...store.db.trabalhos.map((t) => t.ordem ?? 0));
+      if (btn) btn.disabled = true;
+      try {
+        for (const [i, nome] of faltamTrabalhos.entries()) {
+          const t = await store.criar('trabalhos', {
+            nome, descricao: '', ativo: 1, ordem: maxOrdem + 10 + i * 10,
+            qtd_mediuns: (grade?.qtd[nome]) ?? 1, grade: gradeKey,
+          });
+          await Promise.all(modelo.dias.map((dow) => store.criar('horarios', {
+            trabalho_id: t.id, dia_semana: dow, hora_inicio: modelo.hora[0], hora_fim: modelo.hora[1],
+          })));
+        }
+        toast('Trabalhos da grade criados.');
+      } catch (err) {
+        toast(err.message, 'error');
+        if (btn) btn.disabled = false;
+        return;
+      }
+      desenharMensal();
+    }
+    area.querySelector('#btn-criar-grade')?.addEventListener('click', (e) => criarTrabalhosDaGrade(e.currentTarget));
+    area.querySelector('#vazio-criar')?.addEventListener('click', (e) => criarTrabalhosDaGrade(e.currentTarget));
     area.querySelector('#f-mes').onchange = (e) => { mes = e.target.value || mes; desenharMensal(); };
     area.querySelector('#btn-imprimir').onclick = () => window.print();
     area.querySelector('#btn-limpar-grade').onclick = async (e) => {
       const btn = e.currentTarget;
+      const idsLimpar = grade ? trabalhosDaGrade().map((t) => t.id) : null;
+      const mmsLimpar = mesesDaGrade();
       const total = store.db.escala.filter((em) =>
-        em.data.startsWith(mes) && (em.contexto ?? 'dirigentes') === store.contextoAtual && em.medio_id > 0).length;
-      if (!total) { toast('A grade deste mês já está vazia.', 'info'); return; }
-      if (!confirm(`Remover os ${total} vínculo(s) de ${MESES[mes.split('-')[1] - 1]} de ${mes.split('-')[0]}? (LEITO é mantido)`)) return;
+        mmsLimpar.some((mm) => em.data.startsWith(mm)) && (em.contexto ?? 'dirigentes') === store.contextoAtual && em.medio_id > 0 &&
+        (!idsLimpar || idsLimpar.includes(em.trabalho_id))).length;
+      if (!total) { toast('A grade deste período já está vazia.', 'info'); return; }
+      if (!confirm(`Remover os ${total} vínculo(s) de ${rotuloPeriodo()}? (LEITO é mantido)`)) return;
       btn.disabled = true;
       try {
-        const n = await store.limparMes(mes);
+        let n = 0;
+        for (const mm of mmsLimpar) n += await store.limparMes(mm, store.contextoAtual, idsLimpar);
         toast(`${n} vínculo(s) removido(s). Grade pronta para nova montagem.`);
       } catch (err) {
         toast(err.message, 'error');
@@ -268,7 +347,9 @@ export function renderEscala(el, dataInicial) {
     };
     area.querySelector('#btn-nota')?.addEventListener('click', async () => {
       try {
-        await store.salvarNotaDoMes(mes, area.querySelector('#f-nota').value.trim());
+        for (const mm of mesesDaGrade()) {
+          await store.salvarNotaDoMes(mm, area.querySelector(`#f-nota-${mm}`).value.trim());
+        }
         toast('Avisos salvos.');
       } catch (err) { toast(err.message, 'error'); return; }
       desenharMensal();
@@ -283,7 +364,7 @@ export function renderEscala(el, dataInicial) {
       <div class="modal-backdrop" id="dist-backdrop">
         <div class="modal" role="dialog" aria-modal="true" aria-label="Distribuição automática">
           <h2>Distribuir Mediuns Automaticamente</h2>
-          <p class="modal-sub">Sorteio com rodízio justo para ${MESES[mes.split('-')[1] - 1]} de ${mes.split('-')[0]}.</p>
+          <p class="modal-sub">Sorteio com rodízio justo para ${rotuloPeriodo()}.</p>
           <div class="alert info">Somente médiuns com função <strong>${FUNCAO_POR_CONTEXTO[store.contextoAtual] ?? '—'}</strong>. Respeita <strong>disponibilidade</strong> e <strong>conflitos de horário</strong>. Pula células <strong>LEITO</strong> e trabalhos sem horário no dia.</div>
           <div class="alert info">Quantidade por célula conforme o campo <strong>Quantidade de Mediuns</strong> de cada trabalho (menu Trabalhos).</div>
           <div class="quick-actions" style="flex-direction:column;align-items:stretch">
@@ -304,11 +385,16 @@ export function renderEscala(el, dataInicial) {
       btn.disabled = true;
       btn.textContent = 'Distribuindo…';
       try {
-        const r = await store.distribuirAutomaticamente(mes, { modo });
-        let msg = `${r.preenchidas} célula(s) preenchida(s).`;
+        const idsDist = grade ? trabalhosDaGrade().map((t) => t.id) : null;
+        const r = { preenchidas: 0, incompletas: 0, semHorario: 0, semElegivel: 0, removidas: 0 };
+        for (const mm of mesesDaGrade()) {
+          const parcial = await store.distribuirAutomaticamente(mm, { modo, trabalhoIds: idsDist });
+          for (const k of Object.keys(r)) r[k] += parcial[k];
+        }
+        let msg = `${r.preenchidas} célula(s) preenchida(s) no período.`;
         if (r.removidas) msg += ` ${r.removidas} vínculo(s) anterior(es) removido(s).`;
         if (r.semHorario) msg += ` ${r.semHorario} sem horário cadastrado.`;
-        if (r.incompletas) msg += ` ${r.incompletas} parcial(is) (faltou doutrinador elegível).`;
+        if (r.incompletas) msg += ` ${r.incompletas} parcial(is) (faltou elegível).`;
         if (r.semElegivel) msg += ` ${r.semElegivel} sem médium elegível (disponibilidade/conflito/função).`;
         toast(msg, r.preenchidas ? 'success' : 'info');
       } catch (err) {
@@ -321,7 +407,7 @@ export function renderEscala(el, dataInicial) {
     }
     raiz.querySelector('#d-vazias').onclick = (e) => executar('vazias', e.currentTarget);
     raiz.querySelector('#d-tudo').onclick = (e) => {
-      if (!confirm('Apagar todos os vínculos do mês e redistribuir do zero? (LEITO é mantido)')) return;
+      if (!confirm(`Apagar todos os vínculos de ${rotuloPeriodo()} e redistribuir do zero? (LEITO é mantido)`)) return;
       executar('tudo', e.currentTarget);
     };
   }

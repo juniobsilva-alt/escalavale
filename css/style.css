@@ -268,17 +268,21 @@ td.wrap, th.wrap { white-space: normal; }
 /* Grade mensal (impressão) */
 .titulo-grade {
   text-align: center; color: #c00; font-size: 1.4rem; letter-spacing: 0;
-  margin: 18px 0 12px;
+  line-height: 1.2;
+  margin: 8px 0 6px;
 }
 .grade-wrap { overflow-x: auto; }
 table.grade { border-collapse: collapse; width: 100%; font-size: .8rem; }
-table.grade th, table.grade td { border: 2px solid #c00; padding: 5px 6px; white-space: normal; vertical-align: top; }
+table.grade th, table.grade td { border: 2px solid #c00; padding: 5px 6px; white-space: nowrap; vertical-align: middle; line-height: 1.2; }
+table.grade td.vazia, table.grade td.fora-grade { text-align: center; }
+.celula .nome { display: inline; padding: 0; }
+.celula .nome + .nome::before { content: " · "; color: var(--muted); }
 table.grade thead th { background: #fff; color: #000; text-transform: none; font-size: .8rem; text-align: center; }
 table.grade .col-dia { min-width: 64px; text-align: center; background: #fff; position: sticky; left: 0; }
 table.grade td { min-width: 104px; max-width: 150px; }
 table.grade td.vazia { background: #fafafa; }
 .celula {
-  border: 0; background: transparent; width: 100%; min-height: 44px;
+  border: 0; background: transparent; width: 100%; min-height: 0;
   cursor: pointer; text-align: left; padding: 0; font-size: .8rem; color: var(--text);
 }
 .celula:hover { background: #fff7ed; outline: 2px dashed var(--warn); border-radius: 6px; }
@@ -295,11 +299,14 @@ table.grade td.vazia { background: #fafafa; }
   .content { max-width: none; padding: 0; }
   .card { box-shadow: none; }
   .table-wrap { box-shadow: none; overflow: visible; }
-  .titulo-grade { margin-top: 0; }
+  .titulo-grade { margin: 4px 0; }
+  .titulo-grade-sub { margin-bottom: 2px; }
+  .aviso-grade { margin-bottom: 4px; }
   table.grade { font-size: .72rem; }
+  table.grade th, table.grade td { padding: 5px 4px; }
   table.grade td { min-width: 0; }
+  table.grade thead th { white-space: nowrap; }
   body { padding: 10mm; }
-  @page { size: landscape; margin: 0; }
 }
 
 .hero-logo { text-align: center; margin-bottom: 14px; }
@@ -309,7 +316,9 @@ table.grade td.vazia { background: #fafafa; }
 .nav-sub { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 2px 14px; padding-left: 10px; border-left: 2px solid rgba(255,255,255,.15); }
 .nav-item.sub { font-size: .88rem; padding: 8px 12px; }
 
-.titulo-grade-sub { text-align: center; font-size: 1.05rem; margin: 0 0 6px; letter-spacing: .04em; }
-.aviso-grade { text-align: center; font-size: .8rem; font-weight: 700; margin: 0 0 10px; }
+.titulo-grade-sub { text-align: center; font-size: 1.05rem; margin: 0 0 2px; letter-spacing: .04em; line-height: 1.2; }
+.aviso-grade { text-align: center; font-size: .8rem; font-weight: 700; margin: 0 0 6px; line-height: 1.25; }
 .rodape-fixo { font-size: .75rem; color: var(--muted); font-style: italic; margin: 6px 0 18px; }
 table.grade td.fora-grade { background: #e5e7eb; }
+
+.titulo-grade.titulo-tarajo { color: #000; }

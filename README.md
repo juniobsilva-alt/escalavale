@@ -99,3 +99,21 @@ isolados por contexto. Grade segue o modelo do documento oficial: título
 células cinzas quando o trabalho não tem horário no dia, LEITO/Leito Externo e
 rodapé institucional. Modelo inicial: Imunização, Cura, Defumação, Randy (qtd 2).
 Montagem (manual e automática) e disponibilidade usam só função Ajanã.
+
+## Grades da Escala de Ajanãs
+
+Além da Grade Templo (Imunização, Cura, Defumação, Randy), há Grade Oráculo,
+Grade Libertação, Grade Sanday Tronos e Grade Sublimação e Turigano — cada uma
+filtra seus trabalhos, dias de sessão, distribuição e limpeza. Grade sem
+trabalhos cadastrados oferece o botão "Criar trabalhos desta grade".
+
+## Vínculo trabalho-grade (Ajanãs)
+
+No cadastro de trabalhos (menu Ajanãs) há o campo **Grade**: o trabalho participa
+só da grade selecionada (nulo = todas). Rode `supabase/migracao-grade.sql` na nuvem.
+
+## Grades bimestrais (Ajanãs)
+
+As grades da Escala de Ajanãs exibem **2 meses consecutivos** a partir do mês
+escolhido (ex.: setembro e outubro), como no documento oficial. Distribuição,
+limpeza, avisos e impressão operam no período todo. Dirigentes segue mensal.

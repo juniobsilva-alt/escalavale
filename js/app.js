@@ -18,6 +18,10 @@ const CONTEXTO_POR_ROTA = {
   'dir-horarios': 'dirigentes',
   'dir-disponibilidade': 'dirigentes',
   'aj-grade': 'ajanas',
+  'aj-oraculo': 'ajanas',
+  'aj-libertacao': 'ajanas',
+  'aj-sanday': 'ajanas',
+  'aj-sublimacao': 'ajanas',
   'aj-trabalhos': 'ajanas',
   'aj-horarios': 'ajanas',
   'aj-disponibilidade': 'ajanas',
@@ -29,6 +33,10 @@ const GRUPO_POR_ROTA = {
   'dir-horarios': 'dirigentes',
   'dir-disponibilidade': 'dirigentes',
   'aj-grade': 'ajanas',
+  'aj-oraculo': 'ajanas',
+  'aj-libertacao': 'ajanas',
+  'aj-sanday': 'ajanas',
+  'aj-sublimacao': 'ajanas',
   'aj-trabalhos': 'ajanas',
   'aj-horarios': 'ajanas',
   'aj-disponibilidade': 'ajanas',
@@ -41,7 +49,11 @@ const ROTAS = {
   'dir-trabalhos': renderTrabalhos,
   'dir-horarios': renderHorarios,
   'dir-disponibilidade': renderDisponibilidade,
-  'aj-grade': (el) => { apiEscala = renderEscala(el, document.getElementById('atalho-data').value || hojeISO()); },
+  'aj-grade': (el) => { apiEscala = renderEscala(el, document.getElementById('atalho-data').value || hojeISO(), 'aj-grade'); },
+  'aj-oraculo': (el) => { apiEscala = renderEscala(el, document.getElementById('atalho-data').value || hojeISO(), 'aj-oraculo'); },
+  'aj-libertacao': (el) => { apiEscala = renderEscala(el, document.getElementById('atalho-data').value || hojeISO(), 'aj-libertacao'); },
+  'aj-sanday': (el) => { apiEscala = renderEscala(el, document.getElementById('atalho-data').value || hojeISO(), 'aj-sanday'); },
+  'aj-sublimacao': (el) => { apiEscala = renderEscala(el, document.getElementById('atalho-data').value || hojeISO(), 'aj-sublimacao'); },
   'aj-trabalhos': renderTrabalhos,
   'aj-horarios': renderHorarios,
   'aj-disponibilidade': renderDisponibilidade,
@@ -185,6 +197,11 @@ function montarApp(email) {
     rodape.style.flexWrap = 'wrap';
     rodape.prepend(sess);
   }
+
+  window.addEventListener('beforeprint', () => {
+    const tag = document.getElementById('print-orientacao');
+    if (tag) tag.textContent = `@page { size: ${window.__orientacaoImpressao || 'landscape'}; margin: 0; }`;
+  });
 
   navegar('dashboard');
 }
