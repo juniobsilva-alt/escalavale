@@ -267,45 +267,49 @@ td.wrap, th.wrap { white-space: normal; }
 
 /* Grade mensal (impressão) */
 .titulo-grade {
-  text-align: center; color: #c00; font-size: 1.4rem; letter-spacing: 0;
-  line-height: 1.2;
-  margin: 8px 0 6px;
+  text-align: center; color: #c00; font-size: 1.3rem; letter-spacing: 0;
+  line-height: 1.15;
+  margin: 6px 0 4px;
 }
 .grade-wrap { overflow-x: auto; }
-table.grade { border-collapse: collapse; width: 100%; font-size: .8rem; }
-table.grade th, table.grade td { border: 2px solid #c00; padding: 5px 6px; white-space: nowrap; vertical-align: middle; line-height: 1.2; }
+table.grade { border-collapse: collapse; width: 100%; font-size: .78rem; }
+table.grade th, table.grade td { border: 2px solid #c00; padding: 3px 5px; white-space: nowrap; vertical-align: middle; line-height: 1.15; }
 table.grade td.vazia, table.grade td.fora-grade { text-align: center; }
-table.grade thead th { background: #fff; color: #000; text-transform: none; font-size: .8rem; text-align: center; }
-table.grade .col-dia { min-width: 64px; text-align: center; background: #fff; position: sticky; left: 0; }
-table.grade td { min-width: 104px; max-width: 150px; }
+table.grade thead th { background: #fff; color: #000; text-transform: none; font-size: .78rem; text-align: center; padding: 4px 4px; }
+table.grade .col-dia { min-width: 60px; text-align: center; background: #fff; position: sticky; left: 0; }
+table.grade td { min-width: 90px; max-width: 140px; }
 table.grade td.vazia { background: #fafafa; }
 .celula {
   border: 0; background: transparent; width: 100%; min-height: 0;
-  cursor: pointer; text-align: left; padding: 0; font-size: .8rem; color: var(--text);
-  display: flex; flex-direction: column; gap: 2px;
+  cursor: pointer; text-align: left; padding: 0; font-size: .78rem; color: var(--text);
+  display: flex; flex-direction: column; gap: 1px;
 }
 .celula:hover { background: #fff7ed; outline: 2px dashed var(--warn); border-radius: 6px; }
-.celula .nome { display: block; padding: 1px 0; line-height: 1.25; }
-.nome.leito, strong.leito { color: #c00; font-weight: 700; letter-spacing: .08em; }
-.rodape-grade { font-size: .8rem; font-weight: 600; margin: 10px 0 18px; }
+.celula .nome { display: block; padding: 0; line-height: 1.15; }
+.nome.leito, strong.leito { color: #c00; font-weight: 700; letter-spacing: .08em; line-height: 1.15; }
+.rodape-grade { font-size: .78rem; font-weight: 600; margin: 6px 0 12px; }
 .linha-add { display: flex; gap: 8px; }
 .linha-add select, .linha-add input { flex: 1; border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; font-size: .92rem; }
 
 /* Impressão: só a grade, sem cabeçalho nem rodapé */
 @media print {
   .sidebar, .topbar, .toolbar, .no-print, .panel-sticky, #toast-root, .tabs { display: none !important; }
-  body { background: #fff; }
+  body { background: #fff; padding: 5mm 6mm; }
   .content { max-width: none; padding: 0; }
   .card { box-shadow: none; }
   .table-wrap { box-shadow: none; overflow: visible; }
-  .titulo-grade { margin: 4px 0; }
-  .titulo-grade-sub { margin-bottom: 2px; }
-  .aviso-grade { margin-bottom: 4px; }
-  table.grade { font-size: .72rem; }
-  table.grade th, table.grade td { padding: 5px 4px; }
+  .titulo-grade { margin: 2px 0 3px; font-size: 1.1rem; }
+  .titulo-grade-sub { margin-bottom: 1px; font-size: .92rem; }
+  .aviso-grade { margin-bottom: 2px; font-size: .72rem; }
+  table.grade { font-size: .68rem; break-inside: avoid; page-break-inside: avoid; }
+  table.grade th, table.grade td { padding: 2px 3px; border-width: 1.5px; line-height: 1.1; }
   table.grade td { min-width: 0; }
-  table.grade thead th { white-space: nowrap; }
-  body { padding: 10mm; }
+  table.grade thead th { white-space: nowrap; padding: 3px 2px; }
+  table.grade .col-dia { min-width: 0; position: static; }
+  .celula { gap: 1px; font-size: .68rem; }
+  .celula .nome { padding: 0; line-height: 1.1; }
+  .rodape-grade { font-size: .68rem; margin: 4px 0 0; }
+  .rodape-fixo { font-size: .65rem; margin: 2px 0 0; }
 }
 
 .hero-logo { text-align: center; margin-bottom: 14px; }
