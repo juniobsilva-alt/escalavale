@@ -54,10 +54,19 @@ export function renderDashboard(el, irPara) {
       </div>
     </div>`;
 
-  el.querySelector('[data-acao="ir-escala"]').onclick = () => irPara('escala');
+  el.querySelector('[data-acao="ir-escala"]').onclick = () => {
+    const destino = (!store.temEscopo('dirigentes') && store.temEscopo('ajanas')) ? 'aj-grade' : 'escala';
+    irPara(destino);
+  };
   el.querySelector('[data-acao="novo-medium"]').onclick = () => irPara('mediuns');
-  el.querySelector('[data-acao="novo-trabalho"]').onclick = () => irPara('dir-trabalhos');
-  el.querySelector('[data-acao="novo-horario"]').onclick = () => irPara('dir-horarios');
+  el.querySelector('[data-acao="novo-trabalho"]').onclick = () => {
+    const destino = (!store.temEscopo('dirigentes') && store.temEscopo('ajanas')) ? 'aj-trabalhos' : 'dir-trabalhos';
+    irPara(destino);
+  };
+  el.querySelector('[data-acao="novo-horario"]').onclick = () => {
+    const destino = (!store.temEscopo('dirigentes') && store.temEscopo('ajanas')) ? 'aj-horarios' : 'dir-horarios';
+    irPara(destino);
+  };
 }
 
 function proximasEscalas(limite) {

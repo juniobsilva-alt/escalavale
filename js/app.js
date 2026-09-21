@@ -71,9 +71,33 @@ const ROTAS = {
   'aj-disponibilidade': renderDisponibilidade,
 };
 
+const ESCOPO_POR_ROTA = {
+  escala: 'dirigentes',
+  'dir-trabalhos': 'dirigentes',
+  'dir-horarios': 'dirigentes',
+  'dir-disponibilidade': 'dirigentes',
+  trabalhos: 'dirigentes',
+  horarios: 'dirigentes',
+  disponibilidade: 'dirigentes',
+
+  'aj-grade': 'ajanas',
+  'aj-oraculo': 'ajanas',
+  'aj-libertacao': 'ajanas',
+  'aj-sanday': 'ajanas',
+  'aj-sublimacao': 'ajanas',
+  'aj-trabalhos': 'ajanas',
+  'aj-horarios': 'ajanas',
+  'aj-disponibilidade': 'ajanas',
+};
+
 function navegar(rota) {
   if (rota === 'usuarios' && !store.ehAdmin()) {
     toast('Acesso restrito a administradores.', 'error');
+    rota = 'dashboard';
+  }
+  const escopoNecessario = ESCOPO_POR_ROTA[rota];
+  if (escopoNecessario && !store.temEscopo(escopoNecessario)) {
+    toast('Acesso restrito: você não possui permissão para este módulo.', 'error');
     rota = 'dashboard';
   }
   rotaAtual = rota;
@@ -94,6 +118,17 @@ function navegar(rota) {
   (ROTAS[rota] || ROTAS.dashboard)(conteudo);
   conteudo.focus({ preventScroll: true });
   window.scrollTo({ top: 0 });
+}
+
+export function atualizarPermissoesMenu() {
+  const navUsuarios = document.getElementById('nav-usuarios');
+  if (navUsuarios) navUsuarios.style.display = store.ehAdmin() ? '' : 'none';
+
+  const groupDir = document.getElementById('nav-group-dirigentes');
+  if (groupDir) groupDir.style.display = store.temEscopo('dirigentes') ? '' : 'none';
+
+  const groupAj = document.getElementById('nav-group-ajanas');
+  if (groupAj) groupAj.style.display = store.temEscopo('ajanas') ? '' : 'none';
 }
 
 async function boot() {
@@ -242,11 +277,8 @@ function montarApp(email) {
     return;
   }
 
-  // Exibe botão de Usuários na barra lateral somente para administradores
-  const navUsuarios = document.getElementById('nav-usuarios');
-  if (navUsuarios) {
-    navUsuarios.style.display = store.ehAdmin() ? '' : 'none';
-  }
+  // Exibe menus e grupos da barra lateral conforme permissões
+  atualizarPermissoesMenu();
 
   document.querySelectorAll('.nav-item').forEach((b) => (b.onclick = () => navegar(b.dataset.route)));
 
@@ -263,11 +295,13 @@ function montarApp(email) {
 
   document.getElementById('btn-nova-escala').onclick = () => {
     document.getElementById('atalho-data').value = hojeISO();
-    navegar('escala');
+    const rotaDestino = (!store.temEscopo('dirigentes') && store.temEscopo('ajanas')) ? 'aj-grade' : 'escala';
+    navegar(rotaDestino);
   };
 
   document.getElementById('atalho-data').onchange = (e) => {
-    navegar('escala');
+    const rotaDestino = (!store.temEscopo('dirigentes') && store.temEscopo('ajanas')) ? 'aj-grade' : 'escala';
+    navegar(rotaDestino);
     apiEscala?.setData(e.target.value || hojeISO());
   };
 

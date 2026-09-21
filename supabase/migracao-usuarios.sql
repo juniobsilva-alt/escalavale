@@ -8,9 +8,13 @@ create table if not exists public.usuarios (
   email text unique not null,
   nome text not null,
   papel text not null default 'coordenador' check (papel in ('admin', 'coordenador')),
+  escopos text[] not null default array['dirigentes','ajanas']::text[],
   ativo integer not null default 1,
   criado_em timestamptz default now()
 );
+
+-- Garante a coluna escopos caso a tabela já exista
+alter table public.usuarios add column if not exists escopos text[] default array['dirigentes','ajanas']::text[];
 
 -- 2. Habilitação de RLS (Row Level Security)
 alter table public.usuarios enable row level security;

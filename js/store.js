@@ -83,7 +83,7 @@ function semente() {
     ],
     notas_mensais: {},
     usuarios: [
-      { id: 1, nome: 'Junio Silva', email: 'juniobsilva@gmail.com', papel: 'admin', ativo: 1 },
+      { id: 1, nome: 'Junio Silva', email: 'juniobsilva@gmail.com', papel: 'admin', ativo: 1, escopos: ['dirigentes', 'ajanas'] },
     ],
     seq: 100,
   };
@@ -99,14 +99,16 @@ function migrar(db) {
   db.usuarios ??= [];
   const adminPrincipal = db.usuarios.find((u) => (u.email || '').toLowerCase().trim() === 'juniobsilva@gmail.com');
   if (!adminPrincipal) {
-    db.usuarios.unshift({ id: 1, nome: 'Junio Silva', email: 'juniobsilva@gmail.com', papel: 'admin', ativo: 1 });
+    db.usuarios.unshift({ id: 1, nome: 'Junio Silva', email: 'juniobsilva@gmail.com', papel: 'admin', ativo: 1, escopos: ['dirigentes', 'ajanas'] });
   } else {
     adminPrincipal.papel = 'admin';
     adminPrincipal.ativo = 1;
+    adminPrincipal.escopos = ['dirigentes', 'ajanas'];
   }
   db.usuarios.forEach((u) => {
     if (u.papel == null) u.papel = 'coordenador';
     if (u.ativo == null) u.ativo = 1;
+    if (u.escopos == null || !Array.isArray(u.escopos)) u.escopos = ['dirigentes', 'ajanas'];
   });
   for (const t of db.trabalhos) {
     if (t.contexto == null) t.contexto = 'dirigentes';
@@ -167,24 +169,28 @@ export const store = {
 
   definirUsuarioAtual(email) {
     if (!email) {
-      this.usuarioAtual = { email: 'local@escalavale', nome: 'Administrador Local', papel: 'admin', ativo: 1 };
+      this.usuarioAtual = { email: 'local@escalavale', nome: 'Administrador Local', papel: 'admin', ativo: 1, escopos: ['dirigentes', 'ajanas'] };
       return this.usuarioAtual;
     }
     const emailNorm = email.toLowerCase().trim();
     let u = this.db.usuarios.find((x) => (x.email || '').toLowerCase().trim() === emailNorm);
     if (emailNorm === 'juniobsilva@gmail.com') {
       if (!u) {
-        u = { id: 1, nome: 'Junio Silva', email: 'juniobsilva@gmail.com', papel: 'admin', ativo: 1 };
+        u = { id: 1, nome: 'Junio Silva', email: 'juniobsilva@gmail.com', papel: 'admin', ativo: 1, escopos: ['dirigentes', 'ajanas'] };
         this.db.usuarios.unshift(u);
       } else {
         u.papel = 'admin';
         u.ativo = 1;
+        u.escopos = ['dirigentes', 'ajanas'];
       }
     }
     if (!u) {
       // Usuário autenticado pelo Supabase Auth mas ainda sem linha em public.usuarios
-      u = { id: uid(), nome: email.split('@')[0], email, papel: 'coordenador', ativo: 1 };
+      u = { id: uid(), nome: email.split('@')[0], email, papel: 'coordenador', ativo: 1, escopos: ['dirigentes', 'ajanas'] };
       this.db.usuarios.push(u);
+    }
+    if (!u.escopos || !Array.isArray(u.escopos)) {
+      u.escopos = ['dirigentes', 'ajanas'];
     }
     this.usuarioAtual = u;
     return this.usuarioAtual;
@@ -192,6 +198,13 @@ export const store = {
 
   ehAdmin() {
     return this.usuarioAtual?.papel === 'admin';
+  },
+
+  temEscopo(escopo) {
+    if (this.ehAdmin()) return true;
+    const escopos = this.usuarioAtual?.escopos;
+    if (!escopos || !Array.isArray(escopos)) return false;
+    return escopos.includes(escopo);
   },
 
   usuarios() {

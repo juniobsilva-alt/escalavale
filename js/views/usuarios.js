@@ -87,6 +87,7 @@ export function renderUsuarios(el) {
           <th>Nome</th>
           <th>E-mail</th>
           <th>Papel</th>
+          <th>Escopos</th>
           <th>Status</th>
           <th>Ações</th>
         </tr>
@@ -96,6 +97,16 @@ export function renderUsuarios(el) {
         const ehProprio = store.usuarioAtual && (u.email || '').toLowerCase().trim() === (store.usuarioAtual.email || '').toLowerCase().trim();
         const isAdmin = u.papel === 'admin';
         const isAtivo = u.ativo === 1;
+        const escopos = Array.isArray(u.escopos) ? u.escopos : ['dirigentes', 'ajanas'];
+        const escoposHTML = isAdmin
+          ? '<span class="pill info" style="font-size:.7rem">Acesso total</span>'
+          : escopos.length === 0
+            ? '<span class="pill danger" style="font-size:.7rem">Nenhum</span>'
+            : escopos.map((e) => {
+                if (e === 'dirigentes') return '<span class="pill muted" style="font-size:.7rem">Dirigentes</span>';
+                if (e === 'ajanas') return '<span class="pill muted" style="font-size:.7rem">Ajanãs</span>';
+                return `<span class="pill muted" style="font-size:.7rem">${escapar(e)}</span>`;
+              }).join(' ');
 
         return `<tr>
           <td>
@@ -109,6 +120,7 @@ export function renderUsuarios(el) {
               ${isAdmin ? 'Administrador' : 'Coordenador'}
             </span>
           </td>
+          <td>${escoposHTML}</td>
           <td>
             <span class="pill ${isAtivo ? 'ok' : 'danger'}">
               ${isAtivo ? 'Ativo' : 'Inativo'}
@@ -185,9 +197,42 @@ export function renderUsuarios(el) {
           <p class="hint">
             ${ehPrincipal
               ? 'O usuário principal é permanentemente Administrador.'
-              : 'Coordenadores têm acesso às escalas e cadastros normais. Administradores gerenciam usuários.'}
+              : 'Coordenadores têm acesso restrito aos escopos definidos. Administradores possuem acesso completo.'}
           </p>
         </div>
+
+        <div class="field" id="wrap-user-escopos">
+          <label>Escopo / Permissão de Acesso *</label>
+          <p class="hint" id="hint-user-escopos" style="margin-bottom:8px">
+            Selecione quais escalas este usuário poderá visualizar e gerenciar:
+          </p>
+          <div class="grid-escopos" id="grid-user-escopos">
+            <label class="card-escopo" id="lbl-escopo-dirigentes">
+              <input type="checkbox" id="escopo-dirigentes" name="escopos" value="dirigentes"
+                ${(!atual || (atual.escopos ? atual.escopos.includes('dirigentes') : true)) ? 'checked' : ''} />
+              <div>
+                <strong>Escala de dirigentes</strong>
+                <p class="muted" style="font-size:0.8rem;margin:2px 0 0 0">
+                  Grade, Trabalhos, Horários e Disponibilidade de dirigentes.
+                </p>
+              </div>
+            </label>
+            <label class="card-escopo" id="lbl-escopo-ajanas">
+              <input type="checkbox" id="escopo-ajanas" name="escopos" value="ajanas"
+                ${(atual?.escopos ? atual.escopos.includes('ajanas') : false) ? 'checked' : ''} />
+              <div>
+                <strong>Escala de Ajanãs</strong>
+                <p class="muted" style="font-size:0.8rem;margin:2px 0 0 0">
+                  Grades (Templo, Oráculo, etc.), Trabalhos, Horários e Disponibilidade de Ajanãs.
+                </p>
+              </div>
+            </label>
+          </div>
+          <p class="error" id="error-user-escopos" style="display:none;color:var(--danger,#c00);font-size:.85rem;margin-top:4px">
+            Selecione ao menos um escopo de acesso para o coordenador.
+          </p>
+        </div>
+
         <div class="field">
           <label style="display:flex;gap:8px;align-items:center;cursor:pointer">
             <input type="checkbox" id="f-user-ativo" name="ativo" value="1"
@@ -214,6 +259,20 @@ export function renderUsuarios(el) {
           return false;
         }
 
+        let escopos = [];
+        if (papel === 'admin') {
+          escopos = ['dirigentes', 'ajanas'];
+        } else {
+          if (form.querySelector('#escopo-dirigentes')?.checked) escopos.push('dirigentes');
+          if (form.querySelector('#escopo-ajanas')?.checked) escopos.push('ajanas');
+          if (escopos.length === 0) {
+            toast('Selecione ao menos um escopo de acesso para o coordenador.', 'error');
+            const errEl = form.querySelector('#error-user-escopos');
+            if (errEl) errEl.style.display = 'block';
+            return false;
+          }
+        }
+
         if (!atual) {
           const senha = (form.querySelector('#f-user-senha')?.value || '').trim();
           if (!senha || senha.length < 6) {
@@ -231,22 +290,39 @@ export function renderUsuarios(el) {
           try {
             if (store.modo === 'nuvem') {
               const { cadastrarUsuarioAuth } = await import('../nuvem.js');
-              await cadastrarUsuarioAuth(email, senha, nome, papel);
+              try {
+                await cadastrarUsuarioAuth(email, senha, nome, papel);
+              } catch (authErr) {
+                // Se o usuário já foi criado previamente no Supabase Auth (ex: via Dashboard), prossegue
+                if (/already registered|already exists/i.test(authErr.message)) {
+                  console.info('Usuário já existe no Auth do Supabase. Vinculando na tabela de usuários.');
+                } else {
+                  throw authErr;
+                }
+              }
             }
-            await store.criar('usuarios', { nome, email, papel, ativo });
+            await store.criar('usuarios', { nome, email, papel, ativo, escopos });
             desenhar();
             toast('Usuário cadastrado com sucesso!');
             return true;
           } catch (err) {
-            const msg = /could not find the table|relation.*does not exist/i.test(err.message)
-              ? 'A tabela "usuarios" ainda não foi criada no Supabase. Execute o script supabase/migracao-usuarios.sql no SQL Editor do Supabase.'
-              : `Erro ao cadastrar usuário: ${err.message}`;
+            let msg = `Erro ao cadastrar usuário: ${err.message}`;
+            if (/could not find the table|relation.*does not exist/i.test(err.message)) {
+              msg = 'A tabela "usuarios" ainda não foi criada no Supabase. Execute o script supabase/migracao-usuarios.sql no SQL Editor do Supabase.';
+            } else if (/signups not allowed/i.test(err.message)) {
+              msg = 'Cadastros desativados no Supabase Auth. Ative a opção "Allow new users to sign up" em Authentication > Providers > Email no painel do Supabase, ou crie o usuário direto pelo painel em Authentication > Users.';
+            }
             toast(msg, 'error');
             return false;
           }
         } else {
           try {
-            await store.atualizar('usuarios', atual.id, { nome, papel, ativo });
+            await store.atualizar('usuarios', atual.id, { nome, papel, ativo, escopos });
+            if (ehProprio) {
+              store.usuarioAtual.papel = papel;
+              store.usuarioAtual.escopos = escopos;
+              window.dispatchEvent(new CustomEvent('escalavale:permissoes-alteradas'));
+            }
             desenhar();
             toast('Usuário atualizado com sucesso!');
             return true;
@@ -260,6 +336,32 @@ export function renderUsuarios(el) {
         }
       },
     });
+
+    const selPapel = document.querySelector('#f-user-papel');
+    const checkDir = document.querySelector('#escopo-dirigentes');
+    const checkAj = document.querySelector('#escopo-ajanas');
+    const lblDir = document.querySelector('#lbl-escopo-dirigentes');
+    const lblAj = document.querySelector('#lbl-escopo-ajanas');
+    const hintEscopos = document.querySelector('#hint-user-escopos');
+
+    function sincronizarEscopos() {
+      const isAdmin = selPapel?.value === 'admin';
+      if (isAdmin) {
+        if (checkDir) { checkDir.checked = true; checkDir.disabled = true; }
+        if (checkAj) { checkAj.checked = true; checkAj.disabled = true; }
+        lblDir?.classList.add('disabled');
+        lblAj?.classList.add('disabled');
+        if (hintEscopos) hintEscopos.textContent = 'Administradores possuem acesso total a todos os menus e escalas do sistema.';
+      } else {
+        if (checkDir) checkDir.disabled = false;
+        if (checkAj) checkAj.disabled = false;
+        lblDir?.classList.remove('disabled');
+        lblAj?.classList.remove('disabled');
+        if (hintEscopos) hintEscopos.textContent = 'Selecione quais escalas este coordenador poderá visualizar e gerenciar:';
+      }
+    }
+    selPapel?.addEventListener('change', sincronizarEscopos);
+    sincronizarEscopos();
   }
 
   function alternarStatus(id, novoStatus) {

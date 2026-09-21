@@ -216,3 +216,57 @@ test('7. store.desfazer — restauração de estado anterior', async (t) => {
   assert.ok(opDesfeita.includes('Limpar mês 2026-09'));
   assert.equal(store.db.escala.length, totalDistribuido, 'Deve ter restaurado todas as escalas');
 });
+
+test('8. store.temEscopo — permissões por papel e escopos configurados', async (t) => {
+  store.resetar();
+
+  // 1. Administrador tem acesso total independente dos escopos
+  store.definirUsuarioAtual('juniobsilva@gmail.com');
+  assert.equal(store.ehAdmin(), true);
+  assert.equal(store.temEscopo('dirigentes'), true);
+  assert.equal(store.temEscopo('ajanas'), true);
+  assert.equal(store.temEscopo('qualquer_outro'), true);
+
+  // 2. Coordenador apenas com escopo 'dirigentes'
+  store.db.usuarios.push({
+    id: 200,
+    nome: 'Coord Dirigentes',
+    email: 'coord.dir@teste.com',
+    papel: 'coordenador',
+    ativo: 1,
+    escopos: ['dirigentes'],
+  });
+  store.definirUsuarioAtual('coord.dir@teste.com');
+  assert.equal(store.ehAdmin(), false);
+  assert.equal(store.temEscopo('dirigentes'), true);
+  assert.equal(store.temEscopo('ajanas'), false);
+
+  // 3. Coordenador apenas com escopo 'ajanas'
+  store.db.usuarios.push({
+    id: 201,
+    nome: 'Coord Ajanas',
+    email: 'coord.aj@teste.com',
+    papel: 'coordenador',
+    ativo: 1,
+    escopos: ['ajanas'],
+  });
+  store.definirUsuarioAtual('coord.aj@teste.com');
+  assert.equal(store.ehAdmin(), false);
+  assert.equal(store.temEscopo('dirigentes'), false);
+  assert.equal(store.temEscopo('ajanas'), true);
+
+  // 4. Coordenador com ambos os escopos
+  store.db.usuarios.push({
+    id: 202,
+    nome: 'Coord Ambos',
+    email: 'coord.ambos@teste.com',
+    papel: 'coordenador',
+    ativo: 1,
+    escopos: ['dirigentes', 'ajanas'],
+  });
+  store.definirUsuarioAtual('coord.ambos@teste.com');
+  assert.equal(store.ehAdmin(), false);
+  assert.equal(store.temEscopo('dirigentes'), true);
+  assert.equal(store.temEscopo('ajanas'), true);
+});
+

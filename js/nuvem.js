@@ -87,13 +87,29 @@ function paraBanco(tabela, obj) {
 }
 
 export async function inserir(tabela, obj) {
-  const { data, error } = await supabase.from(tabela).insert(paraBanco(tabela, obj)).select().single();
+  const dados = paraBanco(tabela, obj);
+  let { data, error } = await supabase.from(tabela).insert(dados).select().single();
+  if (error && tabela === 'usuarios' && /column.*escopos.*does not exist|Could not find the 'escopos' column/i.test(error.message)) {
+    const fallback = { ...dados };
+    delete fallback.escopos;
+    const res = await supabase.from(tabela).insert(fallback).select().single();
+    if (res.error) throw new Error(`Falha ao salvar: ${res.error.message}`);
+    return res.data;
+  }
   if (error) throw new Error(`Falha ao salvar: ${error.message}`);
   return data;
 }
 
 export async function atualizar(tabela, id, patch) {
-  const { error } = await supabase.from(tabela).update(paraBanco(tabela, patch)).eq('id', id);
+  const dados = paraBanco(tabela, patch);
+  let { error } = await supabase.from(tabela).update(dados).eq('id', id);
+  if (error && tabela === 'usuarios' && /column.*escopos.*does not exist|Could not find the 'escopos' column/i.test(error.message)) {
+    const fallback = { ...dados };
+    delete fallback.escopos;
+    const res = await supabase.from(tabela).update(fallback).eq('id', id);
+    if (res.error) throw new Error(`Falha ao atualizar: ${res.error.message}`);
+    return;
+  }
   if (error) throw new Error(`Falha ao atualizar: ${error.message}`);
 }
 
