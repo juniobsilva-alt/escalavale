@@ -375,7 +375,7 @@ function montarApp(email) {
 
   window.addEventListener('beforeprint', () => {
     const tag = document.getElementById('print-orientacao');
-    if (tag) tag.textContent = `@page { size: ${window.__orientacaoImpressao || 'landscape'}; margin: 0; }`;
+    if (tag) tag.textContent = `@page { size: ${window.__orientacaoImpressao || 'landscape'}; margin: 4mm 5mm; }`;
   });
 
   navegar('dashboard');

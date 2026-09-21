@@ -291,25 +291,100 @@ table.grade td.vazia { background: #fafafa; }
 .linha-add { display: flex; gap: 8px; }
 .linha-add select, .linha-add input { flex: 1; border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; font-size: .92rem; }
 
-/* Impressão: só a grade, sem cabeçalho nem rodapé */
+/* Impressão: só a grade, sem cabeçalho nem rodapé, exatamente 1 página */
 @media print {
-  .sidebar, .topbar, .toolbar, .no-print, .panel-sticky, #toast-root, .tabs { display: none !important; }
-  body { background: #fff; padding: 5mm 6mm; }
-  .content { max-width: none; padding: 0; }
-  .card { box-shadow: none; }
-  .table-wrap { box-shadow: none; overflow: visible; }
-  .titulo-grade { margin: 2px 0 3px; font-size: 1.1rem; }
-  .titulo-grade-sub { margin-bottom: 1px; font-size: .92rem; }
-  .aviso-grade { margin-bottom: 2px; font-size: .72rem; }
-  table.grade { font-size: .68rem; break-inside: avoid; page-break-inside: avoid; }
-  table.grade th, table.grade td { padding: 2px 3px; border-width: 1.5px; line-height: 1.1; }
-  table.grade td { min-width: 0; }
-  table.grade thead th { white-space: nowrap; padding: 3px 2px; }
-  table.grade .col-dia { min-width: 0; position: static; }
-  .celula { gap: 1px; font-size: .68rem; }
-  .celula .nome { padding: 0; line-height: 1.1; }
-  .rodape-grade { font-size: .68rem; margin: 4px 0 0; }
-  .rodape-fixo { font-size: .65rem; margin: 2px 0 0; }
+  @page { margin: 4mm 5mm; }
+  *, *::before, *::after {
+    box-shadow: none !important;
+  }
+  html, body {
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+    height: auto !important;
+    width: 100% !important;
+  }
+  .app, .main-col, .content {
+    display: block !important;
+    min-height: 0 !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .sidebar, .topbar, .toolbar, .no-print, .panel-sticky, #toast-root, #modal-root, .tabs {
+    display: none !important;
+  }
+  .card {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .table-wrap {
+    box-shadow: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .titulo-grade {
+    margin: 0 0 2px !important;
+    font-size: 1.05rem !important;
+  }
+  .titulo-grade-sub {
+    margin: 0 0 1px !important;
+    font-size: .88rem !important;
+  }
+  .aviso-grade {
+    margin: 0 0 2px !important;
+    font-size: .70rem !important;
+  }
+  table.grade {
+    font-size: .67rem !important;
+    width: 100% !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+  table.grade th, table.grade td {
+    padding: 1.5px 3px !important;
+    border: 1.5px solid #c00 !important;
+    line-height: 1.1 !important;
+  }
+  table.grade td {
+    min-width: 0 !important;
+  }
+  table.grade thead th {
+    white-space: nowrap !important;
+    padding: 2px 2px !important;
+  }
+  table.grade .col-dia {
+    min-width: 0 !important;
+    position: static !important;
+  }
+  .celula {
+    gap: 0 !important;
+    font-size: .67rem !important;
+  }
+  .celula .nome {
+    padding: 0 !important;
+    line-height: 1.1 !important;
+  }
+  .rodape-grade {
+    font-size: .66rem !important;
+    margin: 3px 0 0 !important;
+    padding: 0 !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+  .rodape-fixo {
+    font-size: .62rem !important;
+    margin: 1px 0 0 !important;
+    padding: 0 !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
 }
 
 .hero-logo { text-align: center; margin-bottom: 14px; }
