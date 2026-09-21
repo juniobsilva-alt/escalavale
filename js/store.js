@@ -200,6 +200,17 @@ export const store = {
       u = { id: uid(), nome: email.split('@')[0], email, papel: 'coordenador', ativo: 1, escopos: ['dirigentes', 'ajanas'] };
       this.db.usuarios.push(u);
     }
+    if (typeof u.escopos === 'string') {
+      try {
+        if (u.escopos.startsWith('[')) {
+          u.escopos = JSON.parse(u.escopos);
+        } else {
+          u.escopos = u.escopos.replace(/[{}]/g, '').split(',').map((s) => s.trim().replace(/^"|"$/g, '')).filter(Boolean);
+        }
+      } catch {
+        u.escopos = ['dirigentes', 'ajanas'];
+      }
+    }
     if (!u.escopos || !Array.isArray(u.escopos)) {
       u.escopos = ['dirigentes', 'ajanas'];
     }
