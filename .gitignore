@@ -2,3 +2,6 @@
 Thumbs.db
 *.log
 EscalaVale.zip
+.env
+.env.*
+.opencode/

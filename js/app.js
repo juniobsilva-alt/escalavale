@@ -6,11 +6,19 @@ import { renderTrabalhos } from './views/trabalhos.js';
 import { renderHorarios } from './views/horarios.js';
 import { renderEscala } from './views/escala.js';
 import { renderDisponibilidade } from './views/disponibilidade.js';
+import { renderUsuarios } from './views/usuarios.js';
 import { renderLogin } from './views/auth.js';
+import { renderConsultaPublica } from './views/consulta.js';
 
 const conteudo = document.getElementById('conteudo');
 let rotaAtual = 'dashboard';
 let apiEscala = null;
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch((err) => console.warn('SW falhou:', err));
+  });
+}
 
 const CONTEXTO_POR_ROTA = {
   escala: 'dirigentes',
@@ -45,10 +53,14 @@ const GRUPO_POR_ROTA = {
 const ROTAS = {
   dashboard: (el) => renderDashboard(el, navegar),
   mediuns: renderMediuns,
+  usuarios: renderUsuarios,
   escala: (el) => { apiEscala = renderEscala(el, document.getElementById('atalho-data').value || hojeISO()); },
   'dir-trabalhos': renderTrabalhos,
   'dir-horarios': renderHorarios,
   'dir-disponibilidade': renderDisponibilidade,
+  trabalhos: renderTrabalhos,
+  horarios: renderHorarios,
+  disponibilidade: renderDisponibilidade,
   'aj-grade': (el) => { apiEscala = renderEscala(el, document.getElementById('atalho-data').value || hojeISO(), 'aj-grade'); },
   'aj-oraculo': (el) => { apiEscala = renderEscala(el, document.getElementById('atalho-data').value || hojeISO(), 'aj-oraculo'); },
   'aj-libertacao': (el) => { apiEscala = renderEscala(el, document.getElementById('atalho-data').value || hojeISO(), 'aj-libertacao'); },
@@ -60,6 +72,10 @@ const ROTAS = {
 };
 
 function navegar(rota) {
+  if (rota === 'usuarios' && !store.ehAdmin()) {
+    toast('Acesso restrito a administradores.', 'error');
+    rota = 'dashboard';
+  }
   rotaAtual = rota;
   if (CONTEXTO_POR_ROTA[rota]) store.contextoAtual = CONTEXTO_POR_ROTA[rota];
   document.querySelectorAll('.nav-item[data-route]').forEach((b) => {
@@ -81,33 +97,157 @@ function navegar(rota) {
 }
 
 async function boot() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const querConsulta = urlParams.has('consulta');
+
   conteudo.innerHTML = `<p class="muted">Carregando…</p>`;
   try {
     const { sessaoAtual, carregarTudo } = await import('./nuvem.js');
-    const sessao = await sessaoAtual();
+    const sessaoPromise = sessaoAtual();
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 4000));
+    const sessao = await Promise.race([sessaoPromise, timeoutPromise]);
     if (sessao) {
       store.usarNuvem(await carregarTudo());
+      if (querConsulta) {
+        document.getElementById('sidebar')?.style.setProperty('display', 'none');
+        document.querySelector('.topbar')?.style.setProperty('display', 'none');
+        renderConsultaPublica(conteudo, {
+          medioIdInicial: urlParams.get('m'),
+          aoVoltar: () => { window.location.search = ''; },
+        });
+        return;
+      }
       montarApp(sessao.user?.email ?? null);
+      return;
+    } else if (querConsulta) {
+      try {
+        store.usarNuvem(await carregarTudo());
+      } catch {
+        store.carregarLocal();
+      }
+      document.getElementById('sidebar')?.style.setProperty('display', 'none');
+      document.querySelector('.topbar')?.style.setProperty('display', 'none');
+      renderConsultaPublica(conteudo, {
+        medioIdInicial: urlParams.get('m'),
+        aoVoltar: () => { window.location.search = ''; },
+      });
       return;
     }
   } catch (err) {
     console.warn('Nuvem indisponível no boot:', err);
   }
-  renderLogin(conteudo, {
-    aoEntrar: async (email, senha) => {
-      const { entrar, carregarTudo } = await import('./nuvem.js');
-      const sessao = await entrar(email, senha);
-      store.usarNuvem(await carregarTudo());
-      montarApp(sessao.user?.email ?? email);
-    },
-    aoUsarLocal: () => {
-      store.carregarLocal();
-      montarApp(null);
-    },
-  });
+
+  if (querConsulta) {
+    store.carregarLocal();
+    document.getElementById('sidebar')?.style.setProperty('display', 'none');
+    document.querySelector('.topbar')?.style.setProperty('display', 'none');
+    renderConsultaPublica(conteudo, {
+      medioIdInicial: urlParams.get('m'),
+      aoVoltar: () => { window.location.search = ''; },
+    });
+    return;
+  }
+
+  function abrirLogin() {
+    document.getElementById('sidebar')?.style.setProperty('display', 'none');
+    document.querySelector('.topbar')?.style.setProperty('display', 'none');
+    renderLogin(conteudo, {
+      aoEntrar: async (email, senha) => {
+        const { entrar, carregarTudo } = await import('./nuvem.js');
+        const sessao = await entrar(email, senha);
+        store.usarNuvem(await carregarTudo());
+        montarApp(sessao.user?.email ?? email);
+      },
+      aoUsarLocal: () => {
+        store.carregarLocal();
+        montarApp(null);
+      },
+      aoConsultar: async () => {
+        conteudo.innerHTML = `<p class="muted">Carregando…</p>`;
+        try {
+          const { carregarTudo } = await import('./nuvem.js');
+          store.usarNuvem(await carregarTudo());
+        } catch {
+          store.carregarLocal();
+        }
+        document.getElementById('sidebar')?.style.setProperty('display', 'none');
+        document.querySelector('.topbar')?.style.setProperty('display', 'none');
+        renderConsultaPublica(conteudo, {
+          aoVoltar: () => {
+            abrirLogin();
+          },
+        });
+      },
+    });
+  }
+
+  abrirLogin();
 }
 
 function montarApp(email) {
+  document.getElementById('sidebar')?.style.removeProperty('display');
+  document.querySelector('.topbar')?.style.removeProperty('display');
+  const usuario = store.definirUsuarioAtual(email);
+
+  // Inicia sincronização em tempo real (Supabase Realtime) no modo nuvem
+  if (store.modo === 'nuvem') {
+    import('./nuvem.js').then(({ assinarRealtimeEscala }) => {
+      assinarRealtimeEscala((payload) => {
+        if (payload.eventType === 'INSERT') {
+          const novo = { ...payload.new, medio_id: payload.new.medio_id ?? 0, horario_id: payload.new.horario_id ?? 0 };
+          if (!store.db.escala.some((e) => e.id === novo.id)) {
+            store.db.escala.push(novo);
+            if (['escala', 'aj-grade', 'aj-oraculo', 'aj-libertacao', 'aj-sanday', 'aj-sublimacao'].includes(rotaAtual)) {
+              navegar(rotaAtual);
+              toast('Escala atualizada em tempo real por outro dirigente.', 'info');
+            }
+          }
+        } else if (payload.eventType === 'UPDATE') {
+          const idx = store.db.escala.findIndex((e) => e.id === payload.new.id);
+          if (idx >= 0) {
+            store.db.escala[idx] = { ...payload.new, medio_id: payload.new.medio_id ?? 0, horario_id: payload.new.horario_id ?? 0 };
+            if (['escala', 'aj-grade', 'aj-oraculo', 'aj-libertacao', 'aj-sanday', 'aj-sublimacao'].includes(rotaAtual)) {
+              navegar(rotaAtual);
+              toast('Escala atualizada em tempo real por outro dirigente.', 'info');
+            }
+          }
+        } else if (payload.eventType === 'DELETE') {
+          const idExcluido = payload.old.id;
+          const idx = store.db.escala.findIndex((e) => e.id === idExcluido);
+          if (idx >= 0) {
+            store.db.escala.splice(idx, 1);
+            if (['escala', 'aj-grade', 'aj-oraculo', 'aj-libertacao', 'aj-sanday', 'aj-sublimacao'].includes(rotaAtual)) {
+              navegar(rotaAtual);
+              toast('Escala atualizada em tempo real por outro dirigente.', 'info');
+            }
+          }
+        }
+      });
+    }).catch(console.warn);
+  }
+
+  // Se o usuário estiver desativado, bloqueia acesso e exibe aviso
+  if (usuario && usuario.ativo === 0) {
+    conteudo.innerHTML = `
+      <div class="page-head"><div><h1>Conta Desativada</h1><p>Seu acesso ao sistema foi suspenso.</p></div></div>
+      <div class="card" style="max-width:460px">
+        <p class="muted">Este usuário está inativo no sistema. Entre em contato com o administrador para reativar seu acesso.</p>
+        <div class="mt"><button class="btn btn-primary" id="btn-sair-bloqueado" style="width:100%">Voltar para o login</button></div>
+      </div>`;
+    conteudo.querySelector('#btn-sair-bloqueado').onclick = async () => {
+      const { sair } = await import('./nuvem.js');
+      await sair();
+      location.reload();
+    };
+    return;
+  }
+
+  // Exibe botão de Usuários na barra lateral somente para administradores
+  const navUsuarios = document.getElementById('nav-usuarios');
+  if (navUsuarios) {
+    navUsuarios.style.display = store.ehAdmin() ? '' : 'none';
+  }
+
   document.querySelectorAll('.nav-item').forEach((b) => (b.onclick = () => navegar(b.dataset.route)));
 
   document.querySelectorAll('[data-group]').forEach((btn) => {
@@ -184,7 +324,8 @@ function montarApp(email) {
     const rodape = document.querySelector('.sidebar-footer');
     const sess = document.createElement('div');
     sess.style.cssText = 'flex-basis:100%;font-size:.78rem;color:#93a3c0;display:flex;gap:8px;align-items:center;justify-content:space-between;';
-    sess.innerHTML = `<span style="overflow:hidden;text-overflow:ellipsis">👤 ${email}</span>`;
+    const papelTag = usuario.papel === 'admin' ? 'Admin' : 'Coordenador';
+    sess.innerHTML = `<span style="overflow:hidden;text-overflow:ellipsis" title="${email} (${papelTag})">👤 ${email} <small class="pill ${usuario.papel === 'admin' ? 'info' : 'muted'}" style="font-size:.65rem;padding:2px 6px">${papelTag}</small></span>`;
     const btnSair = document.createElement('button');
     btnSair.className = 'btn btn-ghost btn-sm';
     btnSair.textContent = 'Sair';

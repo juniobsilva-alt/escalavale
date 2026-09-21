@@ -82,6 +82,9 @@ function semente() {
       { id: 2, medio_id: 3, dia_semana: 3, ocorrencia: 3, ativo: 1 },
     ],
     notas_mensais: {},
+    usuarios: [
+      { id: 1, nome: 'Junio Silva', email: 'juniobsilva@gmail.com', papel: 'admin', ativo: 1 },
+    ],
     seq: 100,
   };
 }
@@ -93,6 +96,18 @@ function migrar(db) {
   db.escala ??= [];
   db.disponibilidade ??= [];
   db.notas_mensais ??= {};
+  db.usuarios ??= [];
+  const adminPrincipal = db.usuarios.find((u) => (u.email || '').toLowerCase().trim() === 'juniobsilva@gmail.com');
+  if (!adminPrincipal) {
+    db.usuarios.unshift({ id: 1, nome: 'Junio Silva', email: 'juniobsilva@gmail.com', papel: 'admin', ativo: 1 });
+  } else {
+    adminPrincipal.papel = 'admin';
+    adminPrincipal.ativo = 1;
+  }
+  db.usuarios.forEach((u) => {
+    if (u.papel == null) u.papel = 'coordenador';
+    if (u.ativo == null) u.ativo = 1;
+  });
   for (const t of db.trabalhos) {
     if (t.contexto == null) t.contexto = 'dirigentes';
     if ((t.contexto ?? 'dirigentes') === 'ajanas' && (t.nome ?? '').toLowerCase() === 'randy') {
@@ -108,7 +123,11 @@ function migrar(db) {
     }
   }
   for (const e of db.escala) if (e.contexto == null) e.contexto = 'dirigentes';
-  for (const d of db.disponibilidade) if (d.contexto == null) d.contexto = 'dirigentes';
+  for (const d of db.disponibilidade) {
+    if (d.contexto == null) d.contexto = 'dirigentes';
+    if (d.trabalho_id === undefined) d.trabalho_id = null;
+    if (d.horario_id === undefined) d.horario_id = null;
+  }
   for (const chave of Object.keys(db.notas_mensais)) {
     if (!chave.includes(':')) {
       db.notas_mensais['dirigentes:' + chave] = db.notas_mensais[chave];
@@ -125,7 +144,8 @@ function migrar(db) {
   });
   if (db.seq == null) {
     const max = Math.max(0, ...db.mediuns.map((m) => m.id), ...db.trabalhos.map((t) => t.id),
-      ...db.horarios.map((h) => h.id), ...db.escala.map((e) => e.id), 100);
+      ...db.horarios.map((h) => h.id), ...db.escala.map((e) => e.id),
+      ...db.usuarios.map((u) => typeof u.id === 'number' ? u.id : 0), 100);
     db.seq = max;
   }
   return db;
@@ -139,9 +159,43 @@ export const store = {
   db: null,
   modo: 'local',
   contextoAtual: 'dirigentes',
+  usuarioAtual: null,
 
   nomeContexto(ctx = this.contextoAtual) {
     return CONTEXTOS[ctx] ?? ctx;
+  },
+
+  definirUsuarioAtual(email) {
+    if (!email) {
+      this.usuarioAtual = { email: 'local@escalavale', nome: 'Administrador Local', papel: 'admin', ativo: 1 };
+      return this.usuarioAtual;
+    }
+    const emailNorm = email.toLowerCase().trim();
+    let u = this.db.usuarios.find((x) => (x.email || '').toLowerCase().trim() === emailNorm);
+    if (emailNorm === 'juniobsilva@gmail.com') {
+      if (!u) {
+        u = { id: 1, nome: 'Junio Silva', email: 'juniobsilva@gmail.com', papel: 'admin', ativo: 1 };
+        this.db.usuarios.unshift(u);
+      } else {
+        u.papel = 'admin';
+        u.ativo = 1;
+      }
+    }
+    if (!u) {
+      // Usuário autenticado pelo Supabase Auth mas ainda sem linha em public.usuarios
+      u = { id: uid(), nome: email.split('@')[0], email, papel: 'coordenador', ativo: 1 };
+      this.db.usuarios.push(u);
+    }
+    this.usuarioAtual = u;
+    return this.usuarioAtual;
+  },
+
+  ehAdmin() {
+    return this.usuarioAtual?.papel === 'admin';
+  },
+
+  usuarios() {
+    return this.db.usuarios ?? [];
   },
 
   carregarLocal() {
@@ -166,13 +220,108 @@ export const store = {
     localStorage.setItem(CHAVE, JSON.stringify(this.db));
   },
 
+  undoStack: [],
+  mesesCarregados: new Set(),
+
+  salvarSnapshotUndo(descricao, snapshot = null) {
+    this.undoStack.push({
+      descricao,
+      timestamp: Date.now(),
+      escala: JSON.parse(JSON.stringify(snapshot ?? this.db.escala)),
+    });
+    if (this.undoStack.length > 10) this.undoStack.shift();
+  },
+
+  podeDesfazer() {
+    return this.undoStack.length > 0;
+  },
+
+  async desfazer() {
+    if (!this.undoStack.length) return null;
+    const ultimo = this.undoStack.pop();
+    const anterior = ultimo.escala;
+    if (this.modo === 'nuvem') {
+      const { excluir, inserir } = await nuvem();
+      const idsAtuais = this.db.escala.map((e) => e.id);
+      await Promise.all(idsAtuais.map((id) => excluir('escala', id).catch(() => {})));
+      const restaurados = await Promise.all(anterior.map((e) => {
+        const { id, ...resto } = e;
+        return inserir('escala', resto).catch(() => null);
+      }));
+      this.db.escala = restaurados.filter(Boolean).map((g) => ({
+        ...g,
+        medio_id: g.medio_id ?? 0,
+        horario_id: g.horario_id ?? 0,
+      }));
+    } else {
+      this.db.escala = anterior;
+      this.salvarLocal();
+    }
+    return ultimo.descricao;
+  },
+
+  async garantirMesCarregado(mesChave) {
+    if (this.modo !== 'nuvem') return;
+    if (this.mesesCarregados.has(mesChave)) return;
+    try {
+      const { carregarEscalaMes } = await nuvem();
+      if (carregarEscalaMes) {
+        const itens = await carregarEscalaMes(mesChave);
+        const idsExistentes = new Set(this.db.escala.map((e) => e.id));
+        for (const item of itens) {
+          if (!idsExistentes.has(item.id)) {
+            this.db.escala.push(item);
+          }
+        }
+      }
+      this.mesesCarregados.add(mesChave);
+    } catch (err) {
+      console.warn(`Aviso ao carregar escala do mês ${mesChave}:`, err);
+    }
+  },
+
   exportar() {
     return JSON.stringify(this.db, null, 2);
   },
 
   importar(json) {
-    const dados = JSON.parse(json);
-    if (!dados.mediuns || !dados.trabalhos) throw new Error('Arquivo inválido');
+    let dados;
+    try {
+      dados = JSON.parse(json);
+    } catch {
+      throw new Error('Arquivo inválido: JSON corrompido.');
+    }
+    if (!dados || typeof dados !== 'object' || Array.isArray(dados)) {
+      throw new Error('Arquivo inválido: o conteúdo raiz deve ser um objeto JSON.');
+    }
+    if (!Array.isArray(dados.mediuns)) {
+      throw new Error('Arquivo inválido: a lista "mediuns" é obrigatória.');
+    }
+    for (const m of dados.mediuns) {
+      if (!m || typeof m !== 'object' || m.id == null || typeof m.nome !== 'string') {
+        throw new Error('Arquivo inválido: formato incorreto em um dos médiuns.');
+      }
+    }
+    if (!Array.isArray(dados.trabalhos)) {
+      throw new Error('Arquivo inválido: a lista "trabalhos" é obrigatória.');
+    }
+    for (const t of dados.trabalhos) {
+      if (!t || typeof t !== 'object' || t.id == null || typeof t.nome !== 'string') {
+        throw new Error('Arquivo inválido: formato incorreto em um dos trabalhos.');
+      }
+    }
+    if (dados.horarios != null && !Array.isArray(dados.horarios)) {
+      throw new Error('Arquivo inválido: o campo "horarios" deve ser uma lista.');
+    }
+    if (dados.escala != null && !Array.isArray(dados.escala)) {
+      throw new Error('Arquivo inválido: o campo "escala" deve ser uma lista.');
+    }
+    if (dados.disponibilidade != null && !Array.isArray(dados.disponibilidade)) {
+      throw new Error('Arquivo inválido: o campo "disponibilidade" deve ser uma lista.');
+    }
+    if (dados.usuarios != null && !Array.isArray(dados.usuarios)) {
+      throw new Error('Arquivo inválido: o campo "usuarios" deve ser uma lista.');
+    }
     this.db = migrar(dados);
     this.salvarLocal();
   },
@@ -207,6 +356,16 @@ export const store = {
   },
 
   async atualizar(tabela, id, patch) {
+    if (tabela === 'usuarios') {
+      const u = this.db.usuarios.find((r) => r.id === id);
+      if (u && (u.email || '').toLowerCase().trim() === 'juniobsilva@gmail.com') {
+        if (patch.papel && patch.papel !== 'admin') throw new Error('O usuário juniobsilva@gmail.com deve ser sempre admin.');
+        if (patch.ativo === 0) throw new Error('O usuário principal juniobsilva@gmail.com não pode ser desativado.');
+      }
+      if (u && this.usuarioAtual && u.email === this.usuarioAtual.email && patch.ativo === 0) {
+        throw new Error('Você não pode desativar seu próprio usuário.');
+      }
+    }
     if (this.modo === 'nuvem') {
       const { atualizar } = await nuvem();
       await atualizar(tabela, id, patch);
@@ -216,6 +375,15 @@ export const store = {
   },
 
   async excluir(tabela, id) {
+    if (tabela === 'usuarios') {
+      const u = this.db.usuarios.find((r) => r.id === id);
+      if (u && (u.email || '').toLowerCase().trim() === 'juniobsilva@gmail.com') {
+        throw new Error('O usuário principal juniobsilva@gmail.com não pode ser excluído.');
+      }
+      if (u && this.usuarioAtual && u.email === this.usuarioAtual.email) {
+        throw new Error('Você não pode excluir seu próprio usuário.');
+      }
+    }
     if (this.modo === 'nuvem') {
       const { excluir } = await nuvem();
       await excluir(tabela, id);
@@ -229,17 +397,35 @@ export const store = {
     const alvos = this.db.escala.filter((e) =>
       e.data.startsWith(mesChave) && (e.contexto ?? 'dirigentes') === ctx && e.medio_id > 0 &&
       (!trabalhoIds || trabalhoIds.includes(e.trabalho_id)));
-    if (this.modo === 'nuvem' && alvos.length) {
+    if (!alvos.length) return 0;
+    this.salvarSnapshotUndo(`Limpar mês ${mesChave}`);
+    if (this.modo === 'nuvem') {
       const { excluir } = await nuvem();
-      await Promise.all(alvos.map((e) => excluir('escala', e.id)));
+      const excluidosComSucesso = [];
+      const erros = [];
+      for (const e of alvos) {
+        try {
+          await excluir('escala', e.id);
+          excluidosComSucesso.push(e.id);
+        } catch (err) {
+          erros.push(err);
+        }
+      }
+      const ids = new Set(excluidosComSucesso);
+      this.db.escala = this.db.escala.filter((e) => !ids.has(e.id));
+      if (erros.length > 0) {
+        throw new Error(`Aviso: ${erros.length} vínculo(s) não puderam ser excluídos na nuvem.`);
+      }
+      return excluidosComSucesso.length;
     }
     const ids = new Set(alvos.map((e) => e.id));
     this.db.escala = this.db.escala.filter((e) => !ids.has(e.id));
-    if (this.modo === 'local') this.salvarLocal();
+    this.salvarLocal();
     return alvos.length;
   },
 
   async excluirCelula(dataISO, trabalhoId) {
+    this.salvarSnapshotUndo(`Limpar célula ${dataISO}`);
     if (this.modo === 'nuvem') {
       const { excluirCelula } = await nuvem();
       await excluirCelula(dataISO, trabalhoId, this.contextoAtual);
@@ -257,6 +443,11 @@ export const store = {
     const ativos = this.mediunsAtivos();
     if (ctx === 'ajanas') return ativos.filter((m) => m.funcao === 'Ajanã');
     return ativos;
+  },
+  // Cadastro de disponibilidade: somente a função exigida no contexto (Doutrinador para dirigentes, Ajanã para ajanãs)
+  mediunsDisponibilidade(ctx = this.contextoAtual) {
+    const funcao = FUNCAO_POR_CONTEXTO[ctx] ?? '';
+    return this.mediunsAtivos().filter((m) => !funcao || m.funcao === funcao);
   },
   trabalhosAtivos(ctx = this.contextoAtual) {
     return this.db.trabalhos
@@ -296,7 +487,78 @@ export const store = {
     return this.db.escala.filter((e) => e.data === dataISO && (e.contexto ?? 'dirigentes') === ctx);
   },
   regrasDoMedium(medioId, ctx = this.contextoAtual) {
-    return this.db.disponibilidade.filter((d) => d.medio_id === medioId && d.ativo === 1 && (d.contexto ?? 'dirigentes') === ctx);
+    return this.db.disponibilidade
+      .filter((d) => d.medio_id === medioId && d.ativo === 1 && (d.contexto ?? 'dirigentes') === ctx)
+      .map((d) => {
+        const horario = d.horario_id ? this.db.horarios.find((h) => h.id === d.horario_id) : null;
+        return {
+          ...d,
+          posicao: d.posicao ?? 1,
+          trabalho_nome: d.trabalho_id ? this.nomeTrabalho(d.trabalho_id) : null,
+          hora_inicio: horario?.hora_inicio ?? null,
+          hora_fim: horario?.hora_fim ?? null,
+        };
+      });
+  },
+  verificarConflitoTrabalhoFixo({ medioId, trabalhoId, diaSemana, ocorrencia, posicao = 1, ctx = this.contextoAtual }) {
+    // 1. Verifica se outro médium já ocupa essa posição fixa neste trabalho/data
+    const outro = this.db.disponibilidade.find((d) =>
+      d.ativo === 1 &&
+      (d.contexto ?? 'dirigentes') === ctx &&
+      d.trabalho_id === trabalhoId &&
+      d.dia_semana === diaSemana &&
+      d.ocorrencia === ocorrencia &&
+      (d.posicao ?? 1) === posicao &&
+      d.medio_id !== medioId
+    );
+    if (outro) {
+      return {
+        conflito: true,
+        tipo: 'outro_medium',
+        outroMedioNome: this.nomeMedium(outro.medio_id),
+        mensagem: `O médium "${this.nomeMedium(outro.medio_id)}" já está cadastrado na posição ${posicao} de "${this.nomeTrabalho(trabalhoId)}" no(a) ${OCORRENCIAS[ocorrencia]} ${DIAS_SEMANA[diaSemana]}.`,
+      };
+    }
+
+    // 2. Verifica se o próprio médium já tem exatamente essa regra
+    const proprio = this.db.disponibilidade.find((d) =>
+      d.ativo === 1 &&
+      (d.contexto ?? 'dirigentes') === ctx &&
+      d.trabalho_id === trabalhoId &&
+      d.dia_semana === diaSemana &&
+      d.ocorrencia === ocorrencia &&
+      (d.posicao ?? 1) === posicao &&
+      d.medio_id === medioId
+    );
+    if (proprio) {
+      return {
+        conflito: true,
+        tipo: 'duplicado',
+        mensagem: 'Este médium já possui esta regra de trabalho fixo cadastrada.',
+      };
+    }
+
+    // 3. Verifica se o próprio médium já tem outro trabalho fixo no mesmo dia e horário
+    const horarios = this.horariosDoTrabalhoNoDia(trabalhoId, diaSemana);
+    const hNovo = horarios[0];
+    if (hNovo) {
+      const conflitoHorario = this.db.disponibilidade.find((d) => {
+        if (d.ativo !== 1 || (d.contexto ?? 'dirigentes') !== ctx || d.medio_id !== medioId) return false;
+        if (d.dia_semana !== diaSemana || d.ocorrencia !== ocorrencia || !d.trabalho_id || d.trabalho_id === trabalhoId) return false;
+        const hExistente = this.horariosDoTrabalhoNoDia(d.trabalho_id, diaSemana)[0];
+        if (!hExistente) return false;
+        return !(hNovo.hora_fim <= hExistente.hora_inicio || hNovo.hora_inicio >= hExistente.hora_fim);
+      });
+      if (conflitoHorario) {
+        return {
+          conflito: true,
+          tipo: 'horario',
+          mensagem: `Este médium já possui o trabalho fixo "${this.nomeTrabalho(conflitoHorario.trabalho_id)}" no mesmo dia e horário.`,
+        };
+      }
+    }
+
+    return { conflito: false };
   },
   chaveNota(mesChave, ctx = this.contextoAtual) {
     return `${ctx}:${mesChave}`;
@@ -348,13 +610,20 @@ export const store = {
     await Promise.all(renumerar);
   },
 
-  // Distribui médiuns aleatoriamente nas células do mês, respeitando
-  // disponibilidade, conflitos de horário e pulando células LEITO / sem horário.
+  // Distribui médiuns aleatoriamente nas células do mês (ou meses para bimestral),
+  // respeitando disponibilidade, limite máximo por médium, conflitos de horário
+  // e pulando células LEITO / sem horário.
   // modo: 'vazias' (só preenche células vazias) | 'tudo' (limpa e redistribui)
-  async distribuirAutomaticamente(mesChave, { modo = 'vazias', porCelula = null, trabalhoIds = null } = {}) {
-    const [ano, mesNum] = mesChave.split('-').map(Number);
+  async distribuirAutomaticamente(mesChaves, { modo = 'vazias', porCelula = null, trabalhoIds = null, limiteMaximoPorMedium = 0 } = {}) {
+    const meses = Array.isArray(mesChaves) ? mesChaves : [mesChaves];
+    this.salvarSnapshotUndo(`Distribuição automática (${meses.join(', ')})`);
+    const snapshotOriginal = JSON.parse(JSON.stringify(this.db.escala));
+
     const trabalhos = this.trabalhosAtivos().filter((t) => !trabalhoIds || trabalhoIds.includes(t.id));
-    const dias = diasDeSessaoDoMes(ano, mesNum, this.contextoAtual, trabalhos.map((t) => t.id));
+    const dias = meses.flatMap((mm) => {
+      const [ano, mesNum] = mm.split('-').map(Number);
+      return diasDeSessaoDoMes(ano, mesNum, this.contextoAtual, trabalhos.map((t) => t.id));
+    });
     const mediuns = this.mediunsAtivos();
     const resumo = { preenchidas: 0, incompletas: 0, semHorario: 0, semElegivel: 0, removidas: 0, celulas: 0 };
     const idsRemover = [];
@@ -373,10 +642,63 @@ export const store = {
     }
 
     const ctx = this.contextoAtual;
-    const vinculosNoMes = (medioId) => this.db.escala.filter((e) =>
-      e.medio_id === medioId && e.data.startsWith(mesChave) && (e.contexto ?? 'dirigentes') === ctx).length;
+    // Unifica a contagem de vínculos entre todos os meses informados (essencial para o bimestre)
+    const vinculosNoPeriodo = (medioId) => this.db.escala.filter((e) =>
+      e.medio_id === medioId && meses.some((mm) => e.data.startsWith(mm)) && (e.contexto ?? 'dirigentes') === ctx).length;
 
     const planejados = [];
+
+    // FASE 1: Alocação obrigatória de trabalhos fixos
+    const regrasFixas = this.db.disponibilidade.filter((r) =>
+      r.ativo === 1 && (r.contexto ?? 'dirigentes') === ctx && r.trabalho_id > 0
+    );
+
+    for (const d of dias) {
+      const dt = new Date(d.iso + 'T12:00:00');
+      const oco = ocorrenciaNoMes(dt, d.dow);
+      const totalOco = totalOcorrenciasNoMes(dt, d.dow);
+
+      for (const t of trabalhos) {
+        const cel = celulaMensal(d.iso, t.id);
+        if (cel.temLeito) continue;
+        const horarios = this.horariosDoTrabalhoNoDia(t.id, d.dow);
+        if (horarios.length === 0) continue;
+
+        const regrasFixasDaCelula = regrasFixas
+          .filter((r) =>
+            r.trabalho_id === t.id &&
+            r.dia_semana === d.dow &&
+            (r.ocorrencia === oco || (r.ocorrencia === 6 && oco === totalOco))
+          )
+          .sort((a, b) => (a.posicao ?? 1) - (b.posicao ?? 1));
+
+        for (const regraFixa of regrasFixasDaCelula) {
+          const medioFixo = mediuns.find((m) => m.id === regraFixa.medio_id);
+          if (medioFixo) {
+            const jaEsta = cel.itens.some((e) => e.medio_id === medioFixo.id);
+            if (!jaEsta) {
+              const horarioAlvo = (regraFixa.horario_id && horarios.find((h) => h.id === regraFixa.horario_id)) || horarios[0];
+              if (!haConflitoHorario(medioFixo.id, d.iso, horarioAlvo.hora_inicio, horarioAlvo.hora_fim, 0)) {
+                const novo = {
+                  id: -(planejados.length + 1),
+                  medio_id: medioFixo.id,
+                  trabalho_id: t.id,
+                  data: d.iso,
+                  horario_id: horarioAlvo.id,
+                  presente: 0,
+                  observacao: '',
+                  contexto: ctx,
+                };
+                planejados.push(novo);
+                this.db.escala.push(novo);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // FASE 2: Preenchimento das vagas restantes
     for (const d of dias) {
       for (const t of trabalhos) {
         const cel = celulaMensal(d.iso, t.id);
@@ -385,20 +707,27 @@ export const store = {
         if (horarios.length === 0) { resumo.semHorario++; continue; }
         const ref = horarios[0];
         resumo.celulas++;
-        const existentes = modo === 'tudo' ? [] : cel.itens.filter((e) => e.medio_id > 0);
+        const existentes = cel.itens.filter((e) => e.medio_id > 0);
         const meta = porCelula ?? t.qtd_mediuns ?? 1;
         const faltam = meta - existentes.length;
-        if (faltam <= 0) continue;
+        if (faltam <= 0) {
+          resumo.preenchidas++;
+          continue;
+        }
         const ocupados = new Set(existentes.map((e) => e.medio_id));
         const candidatos = mediuns
           .filter((m) => !ocupados.has(m.id) && m.funcao === (FUNCAO_POR_CONTEXTO[ctx] ?? ''))
           .map((m) => ({ m, sorte: Math.random() }))
-          .sort((a, b) => (vinculosNoMes(a.m.id) - vinculosNoMes(b.m.id)) || (a.sorte - b.sorte));
+          .sort((a, b) => (vinculosNoPeriodo(a.m.id) - vinculosNoPeriodo(b.m.id)) || (a.sorte - b.sorte));
+
         let adicionados = 0;
         for (const { m } of candidatos) {
           if (adicionados >= faltam) break;
+          // Limite máximo de escalas por médium no período
+          if (limiteMaximoPorMedium > 0 && vinculosNoPeriodo(m.id) >= limiteMaximoPorMedium) continue;
           if (!mediumDisponivelNaData(m.id, d.iso)) continue;
           if (haConflitoHorario(m.id, d.iso, ref.hora_inicio, ref.hora_fim, 0)) continue;
+
           const novo = {
             id: -(planejados.length + 1),
             medio_id: m.id, trabalho_id: t.id, data: d.iso,
@@ -417,15 +746,21 @@ export const store = {
     }
 
     if (this.modo === 'nuvem') {
-      const { inserir, excluir } = await nuvem();
-      if (idsRemover.length) await Promise.all(idsRemover.map((id) => excluir('escala', id)));
-      this.db.escala = this.db.escala.filter((e) => e.id > 0);
-      const gravados = await Promise.all(planejados.map((pl) => {
-        const { id, ...resto } = pl;
-        return inserir('escala', resto);
-      }));
-      for (const g of gravados) {
-        this.db.escala.push({ ...g, medio_id: g.medio_id ?? 0, horario_id: g.horario_id ?? 0 });
+      try {
+        const { inserir, excluir } = await nuvem();
+        if (idsRemover.length) await Promise.all(idsRemover.map((id) => excluir('escala', id)));
+        this.db.escala = this.db.escala.filter((e) => e.id > 0);
+        const gravados = await Promise.all(planejados.map((pl) => {
+          const { id, ...resto } = pl;
+          return inserir('escala', resto);
+        }));
+        for (const g of gravados) {
+          this.db.escala.push({ ...g, medio_id: g.medio_id ?? 0, horario_id: g.horario_id ?? 0 });
+        }
+      } catch (err) {
+        // Rollback do estado em memória para evitar inconsistências
+        this.db.escala = snapshotOriginal;
+        throw new Error(`Falha na distribuição na nuvem: ${err.message}. A grade foi revertida.`);
       }
     } else {
       for (const pl of planejados) pl.id = this.proximoId();
@@ -464,6 +799,34 @@ export function slotsDaData(dataISO, ctx = store.contextoAtual) {
 // ---- Grade mensal: célula = (data, trabalho) -> N nomes + flag LEITO ----
 export function celulaMensal(dataISO, trabalhoId, ctx = store.contextoAtual) {
   const itens = store.db.escala.filter((e) => e.data === dataISO && e.trabalho_id === trabalhoId && (e.contexto ?? 'dirigentes') === ctx);
+
+  const dt = new Date(dataISO + 'T12:00:00');
+  const dow = dt.getDay();
+  const oco = ocorrenciaNoMes(dt, dow);
+  const totalOco = totalOcorrenciasNoMes(dt, dow);
+
+  const regrasFixas = store.db.disponibilidade.filter((r) =>
+    r.ativo === 1 &&
+    (r.contexto ?? 'dirigentes') === ctx &&
+    r.trabalho_id === trabalhoId &&
+    r.dia_semana === dow &&
+    (r.ocorrencia === oco || (r.ocorrencia === 6 && oco === totalOco))
+  );
+
+  const posMap = new Map();
+  for (const r of regrasFixas) {
+    if (r.medio_id) {
+      posMap.set(r.medio_id, r.posicao ?? 1);
+    }
+  }
+
+  itens.sort((a, b) => {
+    const posA = posMap.has(a.medio_id) ? posMap.get(a.medio_id) : 999;
+    const posB = posMap.has(b.medio_id) ? posMap.get(b.medio_id) : 999;
+    if (posA !== posB) return posA - posB;
+    return (a.id || 0) - (b.id || 0);
+  });
+
   return {
     itens,
     nomes: itens.filter((e) => e.medio_id > 0).map((e) => store.nomeMedium(e.medio_id)),

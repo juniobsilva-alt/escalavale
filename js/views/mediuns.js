@@ -1,5 +1,35 @@
 import { store, FUNCOES_MEDIUM } from '../store.js';
-import { abrirModal, confirmarExclusao, toast, escapar, estadoVazio } from '../utils.js';
+import { abrirModal, confirmarExclusao, toast, escapar, estadoVazio, hojeISO, mascararTelefone, limparTelefone } from '../utils.js';
+
+function linkWhatsAppIndividual(m) {
+  const tel = limparTelefone(m.telefone);
+  if (!tel) return '';
+  const fone = tel.startsWith('55') ? tel : `55${tel}`;
+  const mesAtual = hojeISO().slice(0, 7);
+  const escalas = store.db.escala.filter((e) =>
+    e.medio_id === m.id && e.data.startsWith(mesAtual) && (e.contexto ?? 'dirigentes') === store.contextoAtual
+  ).sort((a, b) => a.data.localeCompare(b.data));
+
+  const [a, n] = mesAtual.split('-').map(Number);
+  const nomeMes = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'][n - 1];
+
+  let msg = `Salve Deus, Irmão(ã) *${m.nome}*!\nSegue sua escala para *${nomeMes} de ${a}*:\n\n`;
+  if (escalas.length === 0) {
+    msg += `Nenhuma escala programada para este mês.\n`;
+  } else {
+    for (const esc of escalas) {
+      const [, mes, dia] = esc.data.split('-');
+      const dow = new Date(esc.data + 'T12:00:00').getDay();
+      const diasCurto = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+      const trab = store.nomeTrabalho(esc.trabalho_id);
+      const hor = store.db.horarios.find((h) => h.id === esc.horario_id);
+      const horarioStr = hor ? ` (${hor.hora_inicio}–${hor.hora_fim})` : '';
+      msg += `• *${diasCurto[dow]} ${dia}/${mes}*${horarioStr}: ${trab}\n`;
+    }
+  }
+  msg += `\nCaso não possa comparecer, substitua antecipadamente!\nSalve Deus.`;
+  return `https://wa.me/${fone}?text=${encodeURIComponent(msg)}`;
+}
 
 export function renderMediuns(el) {
   el.innerHTML = `
@@ -54,11 +84,17 @@ export function renderMediuns(el) {
       <thead><tr><th>Nome</th><th>Função</th><th>Status</th><th>Telefone</th><th class="wrap">E-mail</th><th>Disponibilidade</th><th>Ações</th></tr></thead>
       <tbody>${dados.map((m) => {
         const nRegras = store.regrasDoMedium(m.id).length;
+        const waLink = linkWhatsAppIndividual(m);
         return `<tr>
           <td><strong>${escapar(m.nome)}</strong>${m.observacao ? `<br/><small class="muted">${escapar(m.observacao)}</small>` : ''}</td>
           <td>${m.funcao ? `<span class="pill info">${escapar(m.funcao)}</span>` : '<span class="muted">—</span>'}</td>
           <td>${m.ativo === 1 ? '<span class="pill ok">Ativo</span>' : '<span class="pill muted">Inativo</span>'}</td>
-          <td>${escapar(m.telefone || '—')}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span>${escapar(m.telefone || '—')}</span>
+              ${waLink ? `<a href="${waLink}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ghost btn-wa" style="padding:2px 6px;text-decoration:none" title="Enviar escala do mês pelo WhatsApp">📱</a>` : ''}
+            </div>
+          </td>
           <td class="wrap">${escapar(m.email || '—')}</td>
           <td>${nRegras === 0 ? '<span class="pill info">Total</span>' : `<span class="pill warn">${nRegras} regra(s)</span>`}</td>
           <td><div class="row-actions">
@@ -90,7 +126,7 @@ export function renderMediuns(el) {
           <input type="checkbox" id="f-ativo" name="ativo" value="1" ${atual?.ativo !== 0 ? 'checked' : ''} style="width:auto" />
           Ativo (se desmarcado, não entra na escala)</label></div>
         <div class="field"><label for="f-tel">Telefone</label>
-          <input id="f-tel" name="telefone" maxlength="20" value="${escapar(atual?.telefone ?? '')}" /></div>
+          <input id="f-tel" name="telefone" maxlength="20" placeholder="(99) 99999-9999" value="${escapar(atual?.telefone ? mascararTelefone(atual.telefone) : '')}" /></div>
         <div class="field"><label for="f-email">E-mail</label>
           <input id="f-email" name="email" type="email" maxlength="100" value="${escapar(atual?.email ?? '')}" />
           <p class="error">E-mail inválido.</p></div>
@@ -98,10 +134,12 @@ export function renderMediuns(el) {
           <textarea id="f-obs" name="observacao" rows="3">${escapar(atual?.observacao ?? '')}</textarea></div>`,
       aoConfirmar: async (dados, form) => {
         const nome = dados.nome.trim();
-        if (!nome) { form.querySelector('#f-nome').closest('.field').classList.add('invalid'); return false; }
+        let valido = true;
+        if (!nome) { form.querySelector('#f-nome').closest('.field').classList.add('invalid'); valido = false; }
         if (dados.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(dados.email)) {
-          form.querySelector('#f-email').closest('.field').classList.add('invalid'); return false;
+          form.querySelector('#f-email').closest('.field').classList.add('invalid'); valido = false;
         }
+        if (!valido) return false;
         const ativo = form.querySelector('#f-ativo').checked ? 1 : 0;
         try {
           if (atual) await store.atualizar('mediuns', atual.id, { ...dados, nome, ativo });
@@ -111,6 +149,20 @@ export function renderMediuns(el) {
         toast(atual ? 'Médium atualizado.' : 'Médium cadastrado.');
       },
     });
+
+    const modalForm = document.getElementById('modal-form');
+    if (modalForm) {
+      const inputTel = modalForm.querySelector('#f-tel');
+      if (inputTel) {
+        inputTel.addEventListener('input', (e) => {
+          e.target.value = mascararTelefone(e.target.value);
+        });
+      }
+      const nomeInput = modalForm.querySelector('#f-nome');
+      nomeInput?.addEventListener('input', () => nomeInput.closest('.field')?.classList.remove('invalid'));
+      const emailInput = modalForm.querySelector('#f-email');
+      emailInput?.addEventListener('input', () => emailInput.closest('.field')?.classList.remove('invalid'));
+    }
   }
 
   function excluir(id, recarregar) {

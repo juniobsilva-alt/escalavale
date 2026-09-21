@@ -4,6 +4,9 @@
 set -e
 cd "$(dirname "$0")"
 
+echo "== Rodando Testes Unitários =="
+node --test test/*.test.mjs
+
 echo "== Validando JS =="
 for f in js/*.js js/views/*.js; do node --check "$f"; done
 

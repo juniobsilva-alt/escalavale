@@ -1,0 +1,7 @@
+name = "supabase-keep-alive"
+main = "index.js"
+compatibility_date = "2024-01-01"
+
+[triggers]
+# Executa a cada 2 dias às 06:00 UTC (03:00 horário de Brasília)
+crons = ["0 6 */2 * *"]

@@ -1,6 +1,6 @@
 import { toast } from '../utils.js';
 
-export function renderLogin(el, { aoEntrar, aoUsarLocal }) {
+export function renderLogin(el, { aoEntrar, aoUsarLocal, aoConsultar }) {
   el.innerHTML = `
     <div class="page-head"><div><h1>Entrar</h1><p>Acesse com seu usuário de dirigente.</p></div></div>
     <div class="card" style="max-width:420px">
@@ -13,6 +13,9 @@ export function renderLogin(el, { aoEntrar, aoUsarLocal }) {
         <button class="btn btn-primary" type="submit" id="l-btn" style="width:100%">Entrar</button>
       </form>
       <div class="mt"><button class="btn btn-sm" id="l-local" style="width:100%">Usar modo local (demonstração offline)</button></div>
+      <div class="mt" style="border-top:1px solid var(--border);padding-top:12px">
+        <button class="btn btn-ghost btn-sm" id="l-consulta" style="width:100%">🔍 Consultar minhas escalas (Médium)</button>
+      </div>
     </div>`;
 
   const form = el.querySelector('#form-login');
@@ -41,6 +44,9 @@ export function renderLogin(el, { aoEntrar, aoUsarLocal }) {
   el.querySelector('#l-local').onclick = () => {
     toast('Modo local: dados só neste navegador.', 'info');
     aoUsarLocal();
+  };
+  el.querySelector('#l-consulta').onclick = () => {
+    aoConsultar?.();
   };
   setTimeout(() => el.querySelector('#l-email')?.focus(), 50);
 }

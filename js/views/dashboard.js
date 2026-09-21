@@ -56,8 +56,8 @@ export function renderDashboard(el, irPara) {
 
   el.querySelector('[data-acao="ir-escala"]').onclick = () => irPara('escala');
   el.querySelector('[data-acao="novo-medium"]').onclick = () => irPara('mediuns');
-  el.querySelector('[data-acao="novo-trabalho"]').onclick = () => irPara('trabalhos');
-  el.querySelector('[data-acao="novo-horario"]').onclick = () => irPara('horarios');
+  el.querySelector('[data-acao="novo-trabalho"]').onclick = () => irPara('dir-trabalhos');
+  el.querySelector('[data-acao="novo-horario"]').onclick = () => irPara('dir-horarios');
 }
 
 function proximasEscalas(limite) {

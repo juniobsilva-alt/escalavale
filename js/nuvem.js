@@ -20,12 +20,29 @@ export async function sair() {
   await supabase.auth.signOut();
 }
 
-const TABELAS = ['mediuns', 'trabalhos', 'horarios', 'escala', 'disponibilidade', 'notas_mensais'];
+const TABELAS = ['mediuns', 'trabalhos', 'horarios', 'escala', 'disponibilidade', 'notas_mensais', 'usuarios'];
 
 export async function carregarTudo() {
-  const resultados = await Promise.all(TABELAS.map((t) => supabase.from(t).select('*')));
-  const [mediuns, trabalhos, horarios, escala, disponibilidade, notas] = resultados.map((res, i) => {
-    if (res.error) throw new Error(`Falha ao ler ${TABELAS[i]}: ${res.error.message}`);
+  const agora = new Date();
+  const anoAtual = agora.getFullYear();
+  const dataInicio = `${anoAtual}-01-01`;
+  const dataFim = `${anoAtual}-12-31`;
+
+  const resultados = await Promise.all(TABELAS.map((t) => {
+    if (t === 'escala') {
+      return supabase.from('escala').select('*').gte('data', dataInicio).lte('data', dataFim);
+    }
+    return supabase.from(t).select('*');
+  }));
+  const [mediuns, trabalhos, horarios, escala, disponibilidade, notas, usuarios] = resultados.map((res, i) => {
+    if (res.error) {
+      // Se a tabela usuarios ainda não foi criada no Supabase, não trava o login do sistema
+      if (TABELAS[i] === 'usuarios' && /could not find the table|relation.*does not exist/i.test(res.error.message)) {
+        console.warn("Tabela 'usuarios' ainda não encontrada no Supabase. Execute supabase/migracao-usuarios.sql no SQL Editor.");
+        return [];
+      }
+      throw new Error(`Falha ao ler ${TABELAS[i]}: ${res.error.message}`);
+    }
     return res.data;
   });
   const notas_mensais = {};
@@ -35,8 +52,28 @@ export async function carregarTudo() {
     escala: escala.map((e) => ({ ...e, medio_id: e.medio_id ?? 0, horario_id: e.horario_id ?? 0 })),
     disponibilidade,
     notas_mensais,
+    usuarios: usuarios ?? [],
     seq: 0,
   };
+}
+
+export async function carregarEscalaMes(mesChave) {
+  const [a, m] = mesChave.split('-').map(Number);
+  const ultimoDia = new Date(a, m, 0).getDate();
+  const inicio = `${mesChave}-01`;
+  const fim = `${mesChave}-${String(ultimoDia).padStart(2, '0')}`;
+  const { data, error } = await supabase.from('escala').select('*').gte('data', inicio).lte('data', fim);
+  if (error) throw new Error(`Falha ao ler escala do mês ${mesChave}: ${error.message}`);
+  return (data || []).map((e) => ({ ...e, medio_id: e.medio_id ?? 0, horario_id: e.horario_id ?? 0 }));
+}
+
+export function assinarRealtimeEscala(aoAlterar) {
+  return supabase
+    .channel('realtime:escala')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'escala' }, (payload) => {
+      aoAlterar(payload);
+    })
+    .subscribe();
 }
 
 function paraBanco(tabela, obj) {
@@ -74,3 +111,25 @@ export async function salvarNota(mes, texto) {
   const { error } = await supabase.from('notas_mensais').upsert({ mes, texto }, { onConflict: 'mes' });
   if (error) throw new Error(`Falha ao salvar avisos: ${error.message}`);
 }
+
+export async function cadastrarUsuarioAuth(email, senha, nome, papel) {
+  // Cliente auxiliar sem persistência de sessão para não deslogar o administrador conectado
+  const authAux = createClient(URL, CHAVE, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data, error } = await authAux.auth.signUp({
+    email,
+    password: senha,
+    options: {
+      data: { nome, papel },
+    },
+  });
+  if (error) throw error;
+  return data.user;
+}
+
+export async function solicitarRedefinicaoSenha(email) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email);
+  if (error) throw new Error(`Falha ao enviar e-mail de redefinição: ${error.message}`);
+}
+

@@ -24,15 +24,45 @@ export function validarHora(valor) {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(valor);
 }
 
-// ---- Toast (feedback imediato — padrão UX) ----
-export function toast(mensagem, tipo = 'success') {
+export function mascararTelefone(valor) {
+  let v = String(valor ?? '').replace(/\D/g, '').slice(0, 11);
+  if (!v) return '';
+  if (v.length <= 2) return `(${v}`;
+  if (v.length <= 6) return `(${v.slice(0, 2)}) ${v.slice(2)}`;
+  if (v.length <= 10) return `(${v.slice(0, 2)}) ${v.slice(2, 6)}-${v.slice(6)}`;
+  return `(${v.slice(0, 2)}) ${v.slice(2, 7)}-${v.slice(7, 11)}`;
+}
+
+export function limparTelefone(valor) {
+  return String(valor ?? '').replace(/\D/g, '');
+}
+
+// ---- Toast (feedback imediato com suporte a ações como Desfazer) ----
+export function toast(mensagem, tipo = 'success', { aoAcao = null, textoAcao = 'Desfazer', duracao = 3500 } = {}) {
   const raiz = document.getElementById('toast-root');
+  if (!raiz) return;
   const el = document.createElement('div');
   el.className = `toast ${tipo}`;
   el.setAttribute('role', 'status');
-  el.textContent = mensagem;
+
+  const span = document.createElement('span');
+  span.textContent = mensagem;
+  el.appendChild(span);
+
+  if (aoAcao) {
+    const btn = document.createElement('button');
+    btn.className = 'toast-action';
+    btn.textContent = textoAcao;
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      aoAcao();
+      el.remove();
+    };
+    el.appendChild(btn);
+  }
+
   raiz.appendChild(el);
-  setTimeout(() => el.remove(), 3200);
+  setTimeout(() => el.remove(), aoAcao ? duracao + 3000 : duracao);
 }
 
 // ---- Modal acessível ----

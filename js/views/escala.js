@@ -4,9 +4,38 @@ import {
   DIAS_SEMANA, DIAS_CURTO, MESES, SITUACAO, LEITO,
   MODELOS_GRADE, GRADE_CONFIG, FUNCAO_POR_CONTEXTO, GRADES_AJANAS,
 } from '../store.js';
-import { hojeISO, formatarData, diaSemanaDe, escapar, toast, pillSituacao, estadoVazio } from '../utils.js';
+import { hojeISO, formatarData, diaSemanaDe, escapar, toast, pillSituacao, estadoVazio, limparTelefone } from '../utils.js';
 
 const GRADES = GRADES_AJANAS;
+
+function linkWhatsAppIndividual(m) {
+  const tel = limparTelefone(m.telefone);
+  if (!tel) return '';
+  const fone = tel.startsWith('55') ? tel : `55${tel}`;
+  const mesAtual = hojeISO().slice(0, 7);
+  const escalas = store.db.escala.filter((e) =>
+    e.medio_id === m.id && e.data.startsWith(mesAtual) && (e.contexto ?? 'dirigentes') === store.contextoAtual
+  ).sort((a, b) => a.data.localeCompare(b.data));
+
+  const [a, n] = mesAtual.split('-').map(Number);
+  const nomeMes = MESES[n - 1];
+
+  let msg = `Salve Deus, Irmão(ã) *${m.nome}*!\nSegue sua escala para *${nomeMes} de ${a}*:\n\n`;
+  if (escalas.length === 0) {
+    msg += `Nenhuma escala programada para este mês.\n`;
+  } else {
+    for (const esc of escalas) {
+      const [, mesStr, dia] = esc.data.split('-');
+      const dow = new Date(esc.data + 'T12:00:00').getDay();
+      const trab = store.nomeTrabalho(esc.trabalho_id);
+      const hor = store.db.horarios.find((h) => h.id === esc.horario_id);
+      const horarioStr = hor ? ` (${hor.hora_inicio}–${hor.hora_fim})` : '';
+      msg += `• *${DIAS_CURTO[dow]} ${dia}/${mesStr}*${horarioStr}: ${trab}\n`;
+    }
+  }
+  msg += `\nCaso não possa comparecer, substitua antecipadamente!\nSalve Deus.`;
+  return `https://wa.me/${fone}?text=${encodeURIComponent(msg)}`;
+}
 
 export function renderEscala(el, dataInicial, gradeKey = null) {
   const grade = gradeKey ? GRADES[gradeKey] : null;
@@ -15,6 +44,8 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
   let dataISO = dataInicial || hojeISO();
   let mes = dataISO.slice(0, 7);
   let selecionado = -1;
+  let mediumDestacadoId = 0;
+  let modoVisualizacao = localStorage.getItem('escalavale_view_mode') || 'tabela';
 
   const ABREV_MES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
   const ehBimestral = () => !!grade && store.contextoAtual === 'ajanas';
@@ -84,6 +115,7 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
       <div class="toolbar">
         <input type="date" id="f-data" value="${dataISO}" aria-label="Data da escala" />
         <button class="btn btn-sm" id="btn-hoje">Hoje</button>
+        <button class="btn btn-sm" id="btn-wa-dia" title="Copiar texto formatado para o WhatsApp">📱 Copiar WhatsApp</button>
         <div class="spacer"></div>
         <button class="btn btn-sm" id="btn-imprimir">Imprimir</button>
       </div>
@@ -98,6 +130,21 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
     const dia = DIAS_SEMANA[diaSemanaDe(dataISO)];
     const mediuns = store.mediunsParaMontagem();
     const restrito = store.contextoAtual === 'ajanas';
+
+    area.querySelector('#btn-wa-dia').onclick = () => {
+      const diaSem = DIAS_SEMANA[diaSemanaDe(dataISO)];
+      const [a, m, d] = dataISO.split('-');
+      let texto = `*ESCALA DE ${store.nomeContexto().toUpperCase()}*\n`;
+      texto += `📅 *${d}/${m}/${a} (${diaSem})*\n\n`;
+      for (const sl of slots) {
+        const nomes = sl.todos_nomes.length ? sl.todos_nomes.join(', ') : 'Vaga em aberto';
+        const leito = sl.tem_leito ? ' [LEITO]' : '';
+        texto += `⏰ *${sl.hora_inicio}–${sl.hora_fim}* | *${sl.trabalho_nome}:* ${nomes}${leito}\n`;
+      }
+      texto += `\n_Salve Deus!_`;
+      navigator.clipboard.writeText(texto);
+      toast('Escala do dia copiada para colar no WhatsApp!');
+    };
 
     if (slots.length === 0) {
       corpo.innerHTML = estadoVazio({
@@ -137,6 +184,9 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
     }
 
     const s = slots[selecionado];
+    const mFixo = s.medio_id ? store.db.mediuns.find((x) => x.id === s.medio_id) : null;
+    const waIndividual = mFixo?.telefone ? linkWhatsAppIndividual(mFixo) : null;
+
     painel.innerHTML = `
       <h3>${escapar(s.trabalho_nome)}</h3>
       <p class="muted">${formatarData(dataISO)} · ${s.hora_inicio}–${s.hora_fim}</p>
@@ -154,6 +204,7 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
       <div class="quick-actions">
         <button class="btn btn-primary" id="p-salvar">Salvar</button>
         ${s.escala_id ? `<button class="btn" id="p-liberar">Liberar vaga</button>` : ''}
+        ${waIndividual ? `<a href="${waIndividual}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm" style="text-decoration:none">📱 WhatsApp</a>` : ''}
       </div>`;
 
     const selMedium = painel.querySelector('#p-medium');
@@ -211,8 +262,14 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
   }
 
   // ============================ GRADE MENSAL ============================
+  // ============================ GRADE MENSAL ============================
   function desenharMensal() {
     const mms = mesesDaGrade();
+    // Carrega meses sob demanda caso ainda não estejam em cache
+    for (const mm of mms) {
+      store.garantirMesCarregado(mm).catch(() => {});
+    }
+
     const trabalhos = trabalhosDaGrade();
     const idsGrade = grade ? trabalhos.map((t) => t.id) : null;
     const dias = mms.flatMap((mm) => {
@@ -232,14 +289,34 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
       !store.db.trabalhos.some((t) => t.ativo === 1 && (t.contexto ?? 'dirigentes') === store.contextoAtual && t.nome.toLowerCase() === n.toLowerCase()));
     const diasSessao = [...new Set(store.db.horarios.map((h) => h.dia_semana))].sort();
 
+    // Contagem de escalas do médium destacado no período
+    let totalDestaque = 0;
+    if (mediumDestacadoId) {
+      totalDestaque = store.db.escala.filter((e) =>
+        e.medio_id === mediumDestacadoId &&
+        mms.some((mm) => e.data.startsWith(mm)) &&
+        (e.contexto ?? 'dirigentes') === store.contextoAtual &&
+        (!idsGrade || idsGrade.includes(e.trabalho_id))
+      ).length;
+    }
+
     area.innerHTML = `
       <div class="toolbar no-print">
         <input type="month" id="f-mes" value="${mes}" aria-label="Mês da grade" />
-        <span class="muted">${preenchidas}/${totalCelulas} células preenchidas</span>
+        <span class="muted">${preenchidas}/${totalCelulas} células</span>
+        <select id="sel-destaque" class="select-sm" aria-label="Destacar médium" style="max-width:170px">
+          <option value="0">🔍 Destacar médium…</option>
+          ${store.mediunsAtivos().map((m) => `<option value="${m.id}" ${m.id === mediumDestacadoId ? 'selected' : ''}>${escapar(m.nome)}</option>`).join('')}
+        </select>
+        <span id="badge-destaque" class="pill info" style="${mediumDestacadoId ? '' : 'display:none'}">${totalDestaque} escala(s)</span>
+        <button class="btn btn-sm only-mobile" id="btn-modo-view">${modoVisualizacao === 'cards' ? '📋 Tabela' : '📱 Cards'}</button>
         <div class="spacer"></div>
+        ${store.podeDesfazer() ? `<button class="btn btn-sm btn-ghost" id="btn-desfazer-grade" title="Desfazer última ação">↩ Desfazer</button>` : ''}
         <button class="btn btn-sm" id="btn-limpar-grade">Limpar grade</button>
-        <button class="btn btn-sm" id="btn-distribuir">🎲 Distribuir Mediuns Automaticamente</button>
-        <button class="btn btn-sm" id="btn-modelo">Criar grade modelo</button>
+        <button class="btn btn-sm" id="btn-distribuir">🎲 Distribuir Mediuns</button>
+        <button class="btn btn-sm" id="btn-wa-resumo">📱 WhatsApp</button>
+        <button class="btn btn-sm" id="btn-exportar-img">📸 Salvar Imagem</button>
+        <button class="btn btn-sm" id="btn-modelo">Criar modelo</button>
         <button class="btn btn-sm btn-primary" id="btn-imprimir">Imprimir</button>
       </div>
       ${(trabalhos.length === 0 || dias.length === 0 || store.mediunsAtivos().length === 0) ? `
@@ -250,7 +327,7 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
           <li>${dias.length > 0 ? '✅' : '⬜'} <strong>Horários (linhas):</strong> cadastre ao menos 1 horário por trabalho em cada dia de sessão. Dias com grade hoje: ${diasSessao.length ? diasSessao.map((d) => DIAS_SEMANA[d]).join(', ') : 'nenhum'}.</li>
           <li>${store.mediunsAtivos().length > 0 ? '✅' : '⬜'} <strong>Médiuns (nomes):</strong> ${store.mediunsAtivos().length} ativo(s). Dá para cadastrar na hora, clicando na célula.</li>
         </ul>
-        <p class="muted">O botão <strong>Criar grade modelo</strong> cadastra os trabalhos (${modelo.trabalhos.join(', ')}) e os horários de Qua/Sáb/Dom (19h–21h) sem duplicar o que já existe.</p>
+        <p class="muted">O botão <strong>Criar modelo</strong> cadastra os trabalhos e os horários padrão sem duplicar o que já existe.</p>
         ${faltamTrabalhos.length ? `<button class="btn btn-primary btn-sm" id="btn-criar-grade">Criar trabalhos desta grade (${faltamTrabalhos.join(', ')})</button>` : ''}
       </div>` : ''}
       ${cfg.titulo ? `<h2 class="titulo-grade titulo-tarajo">${cfg.titulo}</h2><h3 class="titulo-grade-sub">ESCALA DOS AJANÃS${grade && gradeKey !== 'aj-grade' ? ' — ' + grade.titulo.toUpperCase() : ''} — ${rotuloPeriodo().toUpperCase()}</h3>` : ''}
@@ -259,24 +336,57 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
       ${trabalhos.length === 0 || dias.length === 0 ? estadoVazio({
         icone: '📅', titulo: 'Grade vazia', descricao: 'Complete os itens acima para gerar a grade.',
         acaoHTML: faltamTrabalhos.length ? `<button class="btn btn-primary btn-sm" id="vazio-criar">Criar trabalhos desta grade</button>` : '',
-      }) : `
-      <div class="table-wrap grade-wrap"><table class="grade">
-        <thead><tr><th class="col-dia">DIA</th>${trabalhos.map((t) => `<th>${escapar(t.nome)}</th>`).join('')}</tr></thead>
-        <tbody>
-          ${dias.map((d) => `<tr>
-            <td class="col-dia"><strong>${DIAS_CURTO[d.dow]} ${String(d.dia).padStart(2, '0')}/${(() => { const m = ABREV_MES[Number(d.iso.slice(5, 7)) - 1]; return m[0].toUpperCase() + m.slice(1); })()}</strong></td>
-            ${trabalhos.map((t) => {
-              const semGrade = store.horariosDoTrabalhoNoDia(t.id, d.dow).length === 0;
-              if (semGrade) return `<td class="fora-grade"><span class="muted">—</span></td>`;
-              const c = celulaMensal(d.iso, t.id);
-              const corpoNomes = c.nomes.map((n) => `<div class="nome">${escapar(n)}</div>`).join('');
-              const leito = c.temLeito ? `<div class="nome leito">${escapar(c.itens.find((e) => e.medio_id === 0)?.observacao?.toUpperCase() || 'LEITO')}</div>` : '';
-              const vazia = !c.nomes.length && !c.temLeito;
-              return `<td class="${vazia ? 'vazia' : ''}"><button class="celula" data-dia="${d.iso}" data-trab="${t.id}" aria-label="${escapar(t.nome)} ${d.iso}">${corpoNomes}${leito}${vazia ? '<span class="muted">—</span>' : ''}</button></td>`;
-            }).join('')}
-          </tr>`).join('')}
-        </tbody>
-      </table></div>
+      }) : (modoVisualizacao === 'cards' ? `
+        <div class="grade-cards-wrap">
+          ${dias.map((d) => `
+            <div class="card grade-dia-card">
+              <div class="grade-dia-head">
+                <strong>${DIAS_SEMANA[d.dow]}, ${String(d.dia).padStart(2, '0')}/${ABREV_MES[Number(d.iso.slice(5, 7)) - 1]}</strong>
+              </div>
+              <div class="grade-dia-grid">
+                ${trabalhos.map((t) => {
+                  const semGrade = store.horariosDoTrabalhoNoDia(t.id, d.dow).length === 0;
+                  if (semGrade) return '';
+                  const c = celulaMensal(d.iso, t.id);
+                  const vazia = !c.nomes.length && !c.temLeito;
+                  const temAlvo = mediumDestacadoId && c.itens.some((e) => e.medio_id === mediumDestacadoId);
+                  return `
+                    <button class="grade-card-item ${vazia ? 'vazia' : ''} ${temAlvo ? 'destaque-medium' : ''}" data-dia="${d.iso}" data-trab="${t.id}">
+                      <span class="card-item-trab">${escapar(t.nome)}</span>
+                      <span class="card-item-nomes">
+                        ${c.temLeito ? '<span class="pill danger">LEITO</span>' : (c.nomes.length ? c.nomes.map((n) => escapar(n)).join(', ') : '<span class="muted">—</span>')}
+                      </span>
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      ` : `
+        <div class="table-wrap grade-wrap"><table class="grade">
+          <thead><tr><th class="col-dia">DIA</th>${trabalhos.map((t) => `<th>${escapar(t.nome)}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${dias.map((d) => `<tr>
+              <td class="col-dia"><strong>${DIAS_CURTO[d.dow]} ${String(d.dia).padStart(2, '0')}/${(() => { const m = ABREV_MES[Number(d.iso.slice(5, 7)) - 1]; return m[0].toUpperCase() + m.slice(1); })()}</strong></td>
+              ${trabalhos.map((t) => {
+                const semGrade = store.horariosDoTrabalhoNoDia(t.id, d.dow).length === 0;
+                if (semGrade) return `<td class="fora-grade"><span class="muted">—</span></td>`;
+                const c = celulaMensal(d.iso, t.id);
+                const corpoNomes = c.nomes.map((n, idx) => {
+                  const mid = c.itens[idx]?.medio_id;
+                  const ehAlvo = mediumDestacadoId && mid === mediumDestacadoId;
+                  return `<div class="nome ${ehAlvo ? 'destaque-medium' : ''}">${escapar(n)}</div>`;
+                }).join('');
+                const leito = c.temLeito ? `<div class="nome leito">${escapar(c.itens.find((e) => e.medio_id === 0)?.observacao?.toUpperCase() || 'LEITO')}</div>` : '';
+                const vazia = !c.nomes.length && !c.temLeito;
+                const celulaDestacada = mediumDestacadoId && c.itens.some((e) => e.medio_id === mediumDestacadoId);
+                return `<td class="${vazia ? 'vazia' : ''} ${celulaDestacada ? 'celula-destaque' : ''}"><button class="celula" data-dia="${d.iso}" data-trab="${t.id}" aria-label="${escapar(t.nome)} ${d.iso}">${corpoNomes}${leito}${vazia ? '<span class="muted">—</span>' : ''}</button></td>`;
+              }).join('')}
+            </tr>`).join('')}
+          </tbody>
+        </table></div>
+      `)}
       <p class="rodape-grade" id="rodape-grade">${mms.map((mm) => escapar(store.notaDoMes(mm))).filter(Boolean).join(' | ')}</p>
       ${cfg.rodapeFixo ? `<p class="rodape-fixo">${escapar(cfg.rodapeFixo)}</p>` : ''}
       <div class="card no-print">
@@ -288,7 +398,7 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
           <textarea id="f-nota-${mm}" rows="2">${escapar(store.notaDoMes(mm))}</textarea></div>`;
         }).join('')}
         <button class="btn btn-primary btn-sm" id="btn-nota">Salvar avisos</button>
-      </div>`}`;
+      </div>`;
 
     async function criarTrabalhosDaGrade(btn) {
       const maxOrdem = Math.max(0, ...store.db.trabalhos.map((t) => t.ordem ?? 0));
@@ -315,6 +425,33 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
     area.querySelector('#vazio-criar')?.addEventListener('click', (e) => criarTrabalhosDaGrade(e.currentTarget));
     area.querySelector('#f-mes').onchange = (e) => { mes = e.target.value || mes; desenharMensal(); };
     area.querySelector('#btn-imprimir').onclick = () => window.print();
+
+    // Destaque de médium
+    area.querySelector('#sel-destaque')?.addEventListener('change', (e) => {
+      mediumDestacadoId = Number(e.target.value);
+      desenharMensal();
+    });
+
+    // Alternar modo de visualização mobile
+    area.querySelector('#btn-modo-view')?.addEventListener('click', () => {
+      modoVisualizacao = modoVisualizacao === 'cards' ? 'tabela' : 'cards';
+      localStorage.setItem('escalavale_view_mode', modoVisualizacao);
+      desenharMensal();
+    });
+
+    // Desfazer última alteração
+    area.querySelector('#btn-desfazer-grade')?.addEventListener('click', async () => {
+      const desc = await store.desfazer();
+      desenharMensal();
+      toast(`Desfeito: ${desc || 'Última ação'}`);
+    });
+
+    // WhatsApp Resumo
+    area.querySelector('#btn-wa-resumo')?.addEventListener('click', () => abrirModalWhatsAppResumo());
+
+    // Exportar Imagem PNG
+    area.querySelector('#btn-exportar-img')?.addEventListener('click', () => exportarGradeComoPNG());
+
     area.querySelector('#btn-limpar-grade').onclick = async (e) => {
       const btn = e.currentTarget;
       const idsLimpar = grade ? trabalhosDaGrade().map((t) => t.id) : null;
@@ -328,7 +465,13 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
       try {
         let n = 0;
         for (const mm of mmsLimpar) n += await store.limparMes(mm, store.contextoAtual, idsLimpar);
-        toast(`${n} vínculo(s) removido(s). Grade pronta para nova montagem.`);
+        toast(`${n} vínculo(s) removido(s). Grade pronta para nova montagem.`, 'info', {
+          aoAcao: async () => {
+            await store.desfazer();
+            desenharMensal();
+            toast('Grade restaurada.');
+          },
+        });
       } catch (err) {
         toast(err.message, 'error');
       }
@@ -340,7 +483,7 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
       btn.disabled = true;
       try {
         await store.criarGradeModelo();
-        toast('Grade modelo criada (10 trabalhos + horários Qua/Sáb/Dom).');
+        toast('Grade modelo criada.');
       } catch (err) { toast(err.message, 'error'); }
       btn.disabled = false;
       desenharMensal();
@@ -354,7 +497,271 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
       } catch (err) { toast(err.message, 'error'); return; }
       desenharMensal();
     });
-    area.querySelectorAll('.celula').forEach((b) => (b.onclick = () => abrirCelula(b.dataset.dia, Number(b.dataset.trab))));
+    area.querySelectorAll('.celula, .grade-card-item').forEach((b) => (b.onclick = () => abrirCelula(b.dataset.dia, Number(b.dataset.trab))));
+  }
+
+  // ---- Modal de Resumo WhatsApp ----
+  function abrirModalWhatsAppResumo() {
+    const raiz = document.getElementById('modal-root');
+    const trabs = trabalhosDaGrade();
+    const mms = mesesDaGrade();
+    const periodo = rotuloPeriodo();
+    raiz.innerHTML = `
+      <div class="modal-backdrop" id="wa-resumo-backdrop">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Compartilhar escala no WhatsApp">
+          <h2>📱 Compartilhar no WhatsApp</h2>
+          <p class="modal-sub">Gere o texto pronto para envio em grupos ou individuais para ${escapar(periodo)}.</p>
+          <div class="field">
+            <label for="wa-sel-tipo">Tipo de resumo</label>
+            <select id="wa-sel-tipo">
+              <option value="completo">Escala Completa do Período</option>
+              <option value="trabalho">Escala de um Trabalho Específico</option>
+            </select>
+          </div>
+          <div class="field" id="field-wa-trab" style="display:none">
+            <label for="wa-sel-trab">Selecione o Trabalho</label>
+            <select id="wa-sel-trab">
+              ${trabs.map((t) => `<option value="${t.id}">${escapar(t.nome)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field">
+            <label for="wa-preview">Pré-visualização do texto:</label>
+            <textarea id="wa-preview" rows="8" readonly style="font-family:monospace;font-size:.85rem;width:100%"></textarea>
+          </div>
+          <div class="quick-actions">
+            <button class="btn btn-primary" id="wa-btn-copiar">📋 Copiar Texto</button>
+            <button class="btn btn-ghost" id="wa-btn-fechar">Fechar</button>
+          </div>
+        </div>
+      </div>`;
+
+    const fechar = () => { raiz.innerHTML = ''; };
+    raiz.querySelector('#wa-btn-fechar').onclick = fechar;
+    raiz.querySelector('#wa-resumo-backdrop').addEventListener('mousedown', (e) => {
+      if (e.target.id === 'wa-resumo-backdrop') fechar();
+    });
+
+    const selTipo = raiz.querySelector('#wa-sel-tipo');
+    const selTrab = raiz.querySelector('#wa-sel-trab');
+    const fTrab = raiz.querySelector('#field-wa-trab');
+    const txtPreview = raiz.querySelector('#wa-preview');
+
+    function formatarEscalaCompletaWhatsApp() {
+      let texto = `*ESCALA DE ${store.nomeContexto().toUpperCase()}*\n`;
+      texto += `*Período: ${periodo}*\n\n`;
+      const dias = mms.flatMap((mm) => {
+        const [a, n] = mm.split('-').map(Number);
+        return diasDeSessaoDoMes(a, n, store.contextoAtual, trabs.map((t) => t.id));
+      });
+
+      for (const d of dias) {
+        const [, mNum, diaStr] = d.iso.split('-');
+        texto += `📅 *${DIAS_CURTO[d.dow]} ${diaStr}/${mNum}:*\n`;
+        for (const t of trabs) {
+          if (store.horariosDoTrabalhoNoDia(t.id, d.dow).length === 0) continue;
+          const c = celulaMensal(d.iso, t.id);
+          const nomes = c.nomes.length ? c.nomes.join(', ') : (c.temLeito ? '[LEITO]' : '—');
+          texto += `  • *${t.nome}:* ${nomes}\n`;
+        }
+        texto += `\n`;
+      }
+      texto += `_Salve Deus!_`;
+      return texto;
+    }
+
+    function formatarEscalaTrabalhoWhatsApp(trabalhoId) {
+      const t = store.db.trabalhos.find((x) => x.id === trabalhoId);
+      const nomeTrabalho = t?.nome || 'Trabalho';
+      let texto = `*ESCALA DE ${store.nomeContexto().toUpperCase()}*\n`;
+      texto += `*Trabalho: ${nomeTrabalho.toUpperCase()}*\n`;
+      texto += `*Período: ${periodo}*\n\n`;
+
+      const dias = mms.flatMap((mm) => {
+        const [a, n] = mm.split('-').map(Number);
+        return diasDeSessaoDoMes(a, n, store.contextoAtual, [trabalhoId]);
+      });
+
+      for (const d of dias) {
+        const [, mNum, diaStr] = d.iso.split('-');
+        const c = celulaMensal(d.iso, trabalhoId);
+        const nomes = c.nomes.length ? c.nomes.join(', ') : (c.temLeito ? '[LEITO]' : 'Vaga em aberto');
+        texto += `• *${DIAS_CURTO[d.dow]} ${diaStr}/${mNum}:* ${nomes}\n`;
+      }
+      texto += `\n_Salve Deus!_`;
+      return texto;
+    }
+
+    function atualizarTexto() {
+      if (selTipo.value === 'completo') {
+        fTrab.style.display = 'none';
+        txtPreview.value = formatarEscalaCompletaWhatsApp();
+      } else {
+        fTrab.style.display = '';
+        txtPreview.value = formatarEscalaTrabalhoWhatsApp(Number(selTrab.value));
+      }
+    }
+
+    selTipo.onchange = atualizarTexto;
+    selTrab.onchange = atualizarTexto;
+    atualizarTexto();
+
+    raiz.querySelector('#wa-btn-copiar').onclick = () => {
+      navigator.clipboard.writeText(txtPreview.value);
+      toast('Texto formatado copiado para a área de transferência!');
+      fechar();
+    };
+  }
+
+  // ---- Exportação de Imagem PNG da Grade ----
+  function exportarGradeComoPNG() {
+    const mms = mesesDaGrade();
+    const trabs = trabalhosDaGrade();
+    const idsGrade = grade ? trabs.map((t) => t.id) : null;
+    const dias = mms.flatMap((mm) => {
+      const [a, n] = mm.split('-').map(Number);
+      return diasDeSessaoDoMes(a, n, store.contextoAtual, idsGrade);
+    });
+    const cfg = GRADE_CONFIG[store.contextoAtual] ?? GRADE_CONFIG.dirigentes;
+
+    if (trabs.length === 0 || dias.length === 0) {
+      toast('Grade vazia. Nada a exportar.', 'warn');
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    const padding = 40;
+    const colDiaWidth = 140;
+    const colWidth = Math.max(130, Math.floor((1920 - padding * 2 - colDiaWidth) / trabs.length));
+    const totalWidth = padding * 2 + colDiaWidth + trabs.length * colWidth;
+    const rowHeight = 36;
+    const headerHeight = 160;
+    const footerHeight = 120;
+    const tableHeight = (dias.length + 1) * rowHeight;
+    const totalHeight = headerHeight + tableHeight + footerHeight;
+
+    canvas.width = totalWidth;
+    canvas.height = totalHeight;
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, totalWidth, totalHeight);
+
+    ctx.textAlign = 'center';
+    let y = 45;
+    if (cfg.titulo) {
+      ctx.fillStyle = '#101a30';
+      ctx.font = 'bold 26px Inter, sans-serif';
+      ctx.fillText(cfg.titulo, totalWidth / 2, y);
+      y += 28;
+      ctx.font = 'bold 18px Inter, sans-serif';
+      ctx.fillStyle = '#2f6fed';
+      ctx.fillText(`ESCALA DOS AJANÃS — ${rotuloPeriodo().toUpperCase()}`, totalWidth / 2, y);
+      y += 24;
+    } else {
+      ctx.fillStyle = '#101a30';
+      ctx.font = 'bold 24px Inter, sans-serif';
+      ctx.fillText(`ESCALA DE TRABALHO — ${rotuloPeriodo().toUpperCase()}`, totalWidth / 2, y);
+      y += 26;
+    }
+
+    if (cfg.aviso) {
+      ctx.fillStyle = '#5d6b82';
+      ctx.font = 'italic 12px Inter, sans-serif';
+      ctx.fillText(cfg.aviso, totalWidth / 2, y);
+      y += 24;
+    }
+
+    const startY = headerHeight;
+    ctx.fillStyle = '#101a30';
+    ctx.fillRect(padding, startY, totalWidth - padding * 2, rowHeight);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 13px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('DIA', padding + colDiaWidth / 2, startY + 23);
+
+    for (let c = 0; c < trabs.length; c++) {
+      const colX = padding + colDiaWidth + c * colWidth;
+      ctx.fillText(trabs[c].nome, colX + colWidth / 2, startY + 23);
+    }
+
+    for (let r = 0; r < dias.length; r++) {
+      const d = dias[r];
+      const rowY = startY + (r + 1) * rowHeight;
+      const isAlt = r % 2 === 1;
+
+      ctx.fillStyle = isAlt ? '#f8fafc' : '#ffffff';
+      ctx.fillRect(padding, rowY, totalWidth - padding * 2, rowHeight);
+
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(padding, rowY, totalWidth - padding * 2, rowHeight);
+
+      const [, mNum, diaStr] = d.iso.split('-');
+      const nomeMesAbrev = ABREV_MES[Number(mNum) - 1];
+      ctx.fillStyle = '#101a30';
+      ctx.font = 'bold 13px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${DIAS_CURTO[d.dow]} ${diaStr}/${nomeMesAbrev}`, padding + colDiaWidth / 2, rowY + 23);
+
+      for (let c = 0; c < trabs.length; c++) {
+        const t = trabs[c];
+        const colX = padding + colDiaWidth + c * colWidth;
+        const semGrade = store.horariosDoTrabalhoNoDia(t.id, d.dow).length === 0;
+
+        if (semGrade) {
+          ctx.fillStyle = '#cbd5e1';
+          ctx.font = '12px Inter, sans-serif';
+          ctx.fillText('—', colX + colWidth / 2, rowY + 23);
+          continue;
+        }
+
+        const cel = celulaMensal(d.iso, t.id);
+        if (cel.temLeito) {
+          ctx.fillStyle = '#dc2626';
+          ctx.font = 'bold 11px Inter, sans-serif';
+          ctx.fillText('LEITO', colX + colWidth / 2, rowY + 23);
+        } else if (cel.nomes.length) {
+          ctx.fillStyle = '#1e293b';
+          ctx.font = cel.nomes.length > 1 ? '11px Inter, sans-serif' : '12px Inter, sans-serif';
+          const textoNomes = cel.nomes.join(', ');
+          ctx.fillText(textoNomes, colX + colWidth / 2, rowY + 23);
+        } else {
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = '12px Inter, sans-serif';
+          ctx.fillText('—', colX + colWidth / 2, rowY + 23);
+        }
+      }
+    }
+
+    let footerY = startY + tableHeight + 25;
+    const notas = mms.map((mm) => store.notaDoMes(mm)).filter(Boolean).join(' | ');
+    if (notas) {
+      ctx.fillStyle = '#334155';
+      ctx.font = '12px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(notas, totalWidth / 2, footerY);
+      footerY += 20;
+    }
+
+    if (cfg.rodapeFixo) {
+      ctx.fillStyle = '#64748b';
+      ctx.font = 'italic 10px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(cfg.rodapeFixo, totalWidth / 2, footerY);
+    }
+
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `escala-${store.contextoAtual}-${mes}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('Imagem da grade baixada com sucesso!');
+    });
   }
 
   // ---- Distribuição automática do mês ----
@@ -367,6 +774,11 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
           <p class="modal-sub">Sorteio com rodízio justo para ${rotuloPeriodo()}.</p>
           <div class="alert info">Somente médiuns com função <strong>${FUNCAO_POR_CONTEXTO[store.contextoAtual] ?? '—'}</strong>. Respeita <strong>disponibilidade</strong> e <strong>conflitos de horário</strong>. Pula células <strong>LEITO</strong> e trabalhos sem horário no dia.</div>
           <div class="alert info">Quantidade por célula conforme o campo <strong>Quantidade de Mediuns</strong> de cada trabalho (menu Trabalhos).</div>
+          <div class="field">
+            <label for="dist-max-med">Limite máximo de escalas por médium no período (opcional):</label>
+            <input type="number" id="dist-max-med" min="1" max="30" placeholder="Sem limite (padrão)" />
+            <p class="hint">Ex.: 2 ou 3 vezes no período para evitar sobrecarga.</p>
+          </div>
           <div class="quick-actions" style="flex-direction:column;align-items:stretch">
             <button class="btn btn-primary" id="d-vazias">Preencher células vazias</button>
             <button class="btn" id="d-tudo">Limpar e redistribuir tudo</button>
@@ -386,17 +798,25 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
       btn.textContent = 'Distribuindo…';
       try {
         const idsDist = grade ? trabalhosDaGrade().map((t) => t.id) : null;
-        const r = { preenchidas: 0, incompletas: 0, semHorario: 0, semElegivel: 0, removidas: 0 };
-        for (const mm of mesesDaGrade()) {
-          const parcial = await store.distribuirAutomaticamente(mm, { modo, trabalhoIds: idsDist });
-          for (const k of Object.keys(r)) r[k] += parcial[k];
-        }
+        const limiteMax = Number(raiz.querySelector('#dist-max-med')?.value) || 0;
+        // Unifica a contagem no bimestre passando todos os meses da grade
+        const r = await store.distribuirAutomaticamente(mesesDaGrade(), {
+          modo,
+          trabalhoIds: idsDist,
+          limiteMaximoPorMedium: limiteMax,
+        });
         let msg = `${r.preenchidas} célula(s) preenchida(s) no período.`;
         if (r.removidas) msg += ` ${r.removidas} vínculo(s) anterior(es) removido(s).`;
         if (r.semHorario) msg += ` ${r.semHorario} sem horário cadastrado.`;
         if (r.incompletas) msg += ` ${r.incompletas} parcial(is) (faltou elegível).`;
         if (r.semElegivel) msg += ` ${r.semElegivel} sem médium elegível (disponibilidade/conflito/função).`;
-        toast(msg, r.preenchidas ? 'success' : 'info');
+        toast(msg, r.preenchidas ? 'success' : 'info', {
+          aoAcao: async () => {
+            await store.desfazer();
+            desenharMensal();
+            toast('Distribuição desfeita.');
+          },
+        });
       } catch (err) {
         toast(err.message, 'error');
         fechar(false);
@@ -425,16 +845,57 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
       const elegiveis = store.mediunsParaMontagem();
       const restrito = store.contextoAtual === 'ajanas';
       const livres = elegiveis.filter((m) => !ocupados.has(m.id));
+
+      const dataDt = new Date(dataISO + 'T12:00:00');
+      const oco = ocorrenciaNoMes(dataDt, dow);
+      const totalOco = totalOcorrenciasNoMes(dataDt, dow);
+      const regrasFixas = store.db.disponibilidade.filter((r) =>
+        r.ativo === 1 &&
+        (r.contexto ?? 'dirigentes') === store.contextoAtual &&
+        r.trabalho_id === trabalhoId &&
+        r.dia_semana === dow &&
+        (r.ocorrencia === oco || (r.ocorrencia === 6 && oco === totalOco))
+      ).sort((a, b) => (a.posicao ?? 1) - (b.posicao ?? 1));
+
       raiz.innerHTML = `
         <div class="modal-backdrop" id="cel-backdrop">
           <div class="modal" role="dialog" aria-modal="true" aria-label="Célula ${escapar(trabalho.nome)}">
             <h2>${escapar(trabalho.nome)}</h2>
             <p class="modal-sub">${formatarData(dataISO)} (${DIAS_SEMANA[dow]})${horarios.length ? ` · ${horarios[0].hora_inicio}–${horarios[0].hora_fim}` : ' · sem horário neste dia'}</p>
+            ${regrasFixas.length > 0 ? `
+              <div style="margin:6px 0 12px;padding:8px 12px;background:#e0e7ff;border:1px solid #c7d2fe;border-radius:var(--radius-sm)">
+                <div style="color:#3730a3;font-size:.85rem;font-weight:600;margin-bottom:6px">
+                  📌 Trabalhos fixos deste dia:
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  ${regrasFixas.map((rf) => {
+                    const nome = store.nomeMedium(rf.medio_id);
+                    const jaEscalado = c.itens.some((e) => e.medio_id === rf.medio_id);
+                    return `
+                      <div style="display:flex;align-items:center;justify-content:space-between;font-size:.85rem">
+                        <span style="color:#1e3a8a"><strong>Posição ${rf.posicao || 1}:</strong> ${escapar(nome)}</span>
+                        ${!jaEscalado && horarios.length
+                          ? `<button class="btn btn-sm btn-primary" data-escalar-fixo="${rf.medio_id}" style="padding:2px 8px;font-size:.78rem">+ Escalar fixo</button>`
+                          : `<span class="pill ok" style="font-size:.65rem;padding:2px 6px">Escalado</span>`}
+                      </div>`;
+                  }).join('')}
+                </div>
+              </div>` : ''}
             ${horarios.length === 0 ? `<div class="alert danger">Cadastre um horário de <strong>${escapar(trabalho.nome)}</strong> para ${DIAS_SEMANA[dow]} antes de escalar (menu Horários).</div>` : ''}
             <h3>Escalados (${c.nomes.length}${c.temLeito ? ' + LEITO' : ''})</h3>
             ${c.itens.length === 0 ? '<p class="muted">Célula vazia.</p>' : `<ul class="list-clean">
-              ${c.itens.map((e) => `<li><span>${e.observacao === LEITO ? '<strong class="leito">LEITO</strong>' : `<strong>${escapar(store.nomeMedium(e.medio_id))}</strong>`}</span>
-                <button class="btn btn-sm" data-rm="${e.id}">Remover</button></li>`).join('')}
+              ${c.itens.map((e) => {
+                const rf = regrasFixas.find((r) => r.medio_id === e.medio_id);
+                const m = store.db.mediuns.find((x) => x.id === e.medio_id);
+                const wa = m?.telefone ? linkWhatsAppIndividual(m) : null;
+                return `<li>
+                  <div style="display:flex;align-items:center;gap:8px">
+                    ${e.observacao === LEITO ? '<strong class="leito">LEITO</strong>' : `<strong>${escapar(store.nomeMedium(e.medio_id))}</strong>${rf ? ` <small class="pill info" style="font-size:.65rem;padding:2px 6px">Fixo (Pos ${rf.posicao || 1})</small>` : ''}`}
+                    ${wa ? `<a href="${wa}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ghost btn-wa" style="padding:2px 6px;text-decoration:none" title="Notificar pelo WhatsApp">📱</a>` : ''}
+                  </div>
+                  <button class="btn btn-sm" data-rm="${e.id}">Remover</button>
+                </li>`;
+              }).join('')}
             </ul>`}
             ${horarios.length > 0 ? `
             <div class="field"><label for="c-medium">Adicionar médium</label>${restrito ? '<p class="hint muted">Somente função Ajanã.</p>' : ''}
@@ -460,6 +921,11 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
       document.addEventListener('keydown', aoTecla);
       raiz.querySelector('#cel-backdrop').addEventListener('mousedown', (e) => { if (e.target.id === 'cel-backdrop') fechar(); });
       raiz.querySelector('#c-fechar').onclick = fechar;
+      raiz.querySelectorAll('[data-escalar-fixo]').forEach((b) => {
+        b.onclick = async () => {
+          await vincular(Number(b.dataset.escalarFixo));
+        };
+      });
       raiz.querySelectorAll('[data-rm]').forEach((b) => (b.onclick = async () => {
         try {
           await store.excluir('escala', Number(b.dataset.rm));
@@ -470,7 +936,14 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
       raiz.querySelector('#c-limpar')?.addEventListener('click', async () => {
         try {
           await store.excluirCelula(dataISO, trabalhoId);
-          toast('Célula limpa.', 'info');
+          toast('Célula limpa.', 'info', {
+            aoAcao: async () => {
+              await store.desfazer();
+              pintar();
+              desenharMensal();
+              toast('Célula restaurada.');
+            },
+          });
         } catch (err) { toast(err.message, 'error'); return; }
         pintar();
       });

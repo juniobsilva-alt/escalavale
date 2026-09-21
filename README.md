@@ -117,3 +117,13 @@ só da grade selecionada (nulo = todas). Rode `supabase/migracao-grade.sql` na n
 As grades da Escala de Ajanãs exibem **2 meses consecutivos** a partir do mês
 escolhido (ex.: setembro e outubro), como no documento oficial. Distribuição,
 limpeza, avisos e impressão operam no período todo. Dirigentes segue mensal.
+
+## Cadastro de Usuários e Controle de Acesso (RBAC)
+
+O sistema conta com gestão de usuários e dois perfis de acesso:
+- **Administrador**: Acesso total, incluindo o cadastro e gerenciamento de usuários. O usuário `juniobsilva@gmail.com` é o administrador principal permanente.
+- **Coordenador**: Acesso a todas as rotinas operacionais (escalas, médiuns, trabalhos, horários, disponibilidade), sem acesso à tela de usuários.
+
+No modo nuvem (Supabase), novos usuários recebem credenciais no Supabase Auth e registro na tabela `public.usuarios`. Contas desativadas têm seu acesso bloqueado.
+Antes de usar esta versão na nuvem, rode `supabase/migracao-usuarios.sql` no SQL Editor do Supabase.
+
