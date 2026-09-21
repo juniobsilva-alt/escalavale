@@ -108,6 +108,17 @@ function migrar(db) {
   db.usuarios.forEach((u) => {
     if (u.papel == null) u.papel = 'coordenador';
     if (u.ativo == null) u.ativo = 1;
+    if (typeof u.escopos === 'string') {
+      try {
+        if (u.escopos.startsWith('[')) {
+          u.escopos = JSON.parse(u.escopos);
+        } else {
+          u.escopos = u.escopos.replace(/[{}]/g, '').split(',').map((s) => s.trim().replace(/^"|"$/g, '')).filter(Boolean);
+        }
+      } catch {
+        u.escopos = ['dirigentes', 'ajanas'];
+      }
+    }
     if (u.escopos == null || !Array.isArray(u.escopos)) u.escopos = ['dirigentes', 'ajanas'];
   });
   for (const t of db.trabalhos) {
