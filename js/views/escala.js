@@ -613,7 +613,7 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
   }
 
   // ---- Exportação de Imagem PNG da Grade ----
-  function exportarGradeComoPNG() {
+  async function exportarGradeComoPNG() {
     const mms = mesesDaGrade();
     const trabs = trabalhosDaGrade();
     const idsGrade = grade ? trabs.map((t) => t.id) : null;
@@ -628,128 +628,315 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
       return;
     }
 
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
+    if (document.fonts) {
+      try {
+        await document.fonts.ready;
+      } catch {}
+    }
 
-    const padding = 40;
-    const colDiaWidth = 140;
-    const colWidth = Math.max(130, Math.floor((1920 - padding * 2 - colDiaWidth) / trabs.length));
-    const totalWidth = padding * 2 + colDiaWidth + trabs.length * colWidth;
-    const rowHeight = 36;
-    const headerHeight = 160;
-    const footerHeight = 120;
-    const tableHeight = (dias.length + 1) * rowHeight;
-    const totalHeight = headerHeight + tableHeight + footerHeight;
+    function quebrarTexto(c, text, maxW) {
+      const words = text.split(' ');
+      const lines = [];
+      let current = '';
+      for (const w of words) {
+        const candidate = current ? current + ' ' + w : w;
+        if (c.measureText(candidate).width <= maxW) {
+          current = candidate;
+        } else {
+          if (current) lines.push(current);
+          current = w;
+        }
+      }
+      if (current) lines.push(current);
+      return lines.length ? lines : [text];
+    }
 
-    canvas.width = totalWidth;
-    canvas.height = totalHeight;
+    function formatarTextoLargura(c, texto, maxW) {
+      if (c.measureText(texto).width <= maxW) return texto;
+      let t = texto;
+      while (t.length > 3 && c.measureText(t + '…').width > maxW) {
+        t = t.slice(0, -1);
+      }
+      return t + '…';
+    }
 
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, totalWidth, totalHeight);
-
-    ctx.textAlign = 'center';
-    let y = 45;
+    // Configuração dos Títulos do Topo
+    const headerLines = [];
     if (cfg.titulo) {
-      ctx.fillStyle = '#101a30';
-      ctx.font = 'bold 26px Inter, sans-serif';
-      ctx.fillText(cfg.titulo, totalWidth / 2, y);
-      y += 28;
-      ctx.font = 'bold 18px Inter, sans-serif';
-      ctx.fillStyle = '#2f6fed';
-      ctx.fillText(`ESCALA DOS AJANÃS — ${rotuloPeriodo().toUpperCase()}`, totalWidth / 2, y);
-      y += 24;
+      headerLines.push({ text: cfg.titulo, font: 'bold 22px Inter, sans-serif', color: '#000000', gap: 6 });
+      headerLines.push({
+        text: `ESCALA DOS AJANÃS${grade && gradeKey !== 'aj-grade' ? ' — ' + grade.titulo.toUpperCase() : ''} — ${rotuloPeriodo().toUpperCase()}`,
+        font: 'bold 16px Inter, sans-serif',
+        color: '#000000',
+        gap: 6,
+      });
+      if (cfg.aviso) {
+        headerLines.push({ text: cfg.aviso, font: 'bold 12px Inter, sans-serif', color: '#000000', gap: 6 });
+      }
+      if (gradeKey !== 'aj-grade') {
+        headerLines.push({
+          text: `${ehBimestral() ? 'Escala de trabalho' : 'Escala de trabalho do mês'} de ${rotuloPeriodo()}`,
+          font: 'bold 18px Inter, sans-serif',
+          color: '#cc0000',
+          gap: 12,
+        });
+      }
     } else {
-      ctx.fillStyle = '#101a30';
-      ctx.font = 'bold 24px Inter, sans-serif';
-      ctx.fillText(`ESCALA DE TRABALHO — ${rotuloPeriodo().toUpperCase()}`, totalWidth / 2, y);
-      y += 26;
+      headerLines.push({
+        text: `${ehBimestral() ? 'Escala de trabalho' : 'Escala de trabalho do mês'} de ${rotuloPeriodo()}`,
+        font: 'bold 22px Inter, sans-serif',
+        color: '#cc0000',
+        gap: 14,
+      });
     }
 
-    if (cfg.aviso) {
-      ctx.fillStyle = '#5d6b82';
-      ctx.font = 'italic 12px Inter, sans-serif';
-      ctx.fillText(cfg.aviso, totalWidth / 2, y);
-      y += 24;
+    const padding = 30;
+    const colDiaWidth = 110;
+    const colWidth = Math.min(220, Math.max(135, Math.floor((1920 - padding * 2 - colDiaWidth) / trabs.length)));
+    const tableWidth = colDiaWidth + trabs.length * colWidth;
+    const totalWidth = padding * 2 + tableWidth;
+
+    const topPadding = 25;
+    let headerHeight = topPadding;
+    for (const hl of headerLines) {
+      const fontSize = parseInt(hl.font.match(/(\d+)px/)[1], 10);
+      headerHeight += fontSize + hl.gap;
     }
 
-    const startY = headerHeight;
-    ctx.fillStyle = '#101a30';
-    ctx.fillRect(padding, startY, totalWidth - padding * 2, rowHeight);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 13px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('DIA', padding + colDiaWidth / 2, startY + 23);
-
-    for (let c = 0; c < trabs.length; c++) {
-      const colX = padding + colDiaWidth + c * colWidth;
-      ctx.fillText(trabs[c].nome, colX + colWidth / 2, startY + 23);
-    }
+    const headerRowH = 34;
+    const celulasData = [];
+    const rowHeights = [];
 
     for (let r = 0; r < dias.length; r++) {
       const d = dias[r];
-      const rowY = startY + (r + 1) * rowHeight;
-      const isAlt = r % 2 === 1;
-
-      ctx.fillStyle = isAlt ? '#f8fafc' : '#ffffff';
-      ctx.fillRect(padding, rowY, totalWidth - padding * 2, rowHeight);
-
-      ctx.strokeStyle = '#e2e8f0';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(padding, rowY, totalWidth - padding * 2, rowHeight);
-
-      const [, mNum, diaStr] = d.iso.split('-');
-      const nomeMesAbrev = ABREV_MES[Number(mNum) - 1];
-      ctx.fillStyle = '#101a30';
-      ctx.font = 'bold 13px Inter, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(`${DIAS_CURTO[d.dow]} ${diaStr}/${nomeMesAbrev}`, padding + colDiaWidth / 2, rowY + 23);
+      const rowCells = [];
+      let maxLines = 1;
 
       for (let c = 0; c < trabs.length; c++) {
         const t = trabs[c];
-        const colX = padding + colDiaWidth + c * colWidth;
         const semGrade = store.horariosDoTrabalhoNoDia(t.id, d.dow).length === 0;
 
         if (semGrade) {
-          ctx.fillStyle = '#cbd5e1';
-          ctx.font = '12px Inter, sans-serif';
-          ctx.fillText('—', colX + colWidth / 2, rowY + 23);
+          rowCells.push({
+            bg: '#e5e7eb',
+            lines: [{ text: '—', color: '#64748b', font: '13px Inter, sans-serif', align: 'center' }]
+          });
           continue;
         }
 
         const cel = celulaMensal(d.iso, t.id);
-        if (cel.temLeito) {
-          ctx.fillStyle = '#dc2626';
-          ctx.font = 'bold 11px Inter, sans-serif';
-          ctx.fillText('LEITO', colX + colWidth / 2, rowY + 23);
-        } else if (cel.nomes.length) {
-          ctx.fillStyle = '#1e293b';
-          ctx.font = cel.nomes.length > 1 ? '11px Inter, sans-serif' : '12px Inter, sans-serif';
-          const textoNomes = cel.nomes.join(', ');
-          ctx.fillText(textoNomes, colX + colWidth / 2, rowY + 23);
-        } else {
-          ctx.fillStyle = '#94a3b8';
-          ctx.font = '12px Inter, sans-serif';
-          ctx.fillText('—', colX + colWidth / 2, rowY + 23);
+        const vazia = !cel.nomes.length && !cel.temLeito;
+
+        if (vazia) {
+          rowCells.push({
+            bg: '#fafafa',
+            lines: [{ text: '—', color: '#94a3b8', font: '13px Inter, sans-serif', align: 'center' }]
+          });
+          continue;
         }
+
+        const lines = [];
+        for (const n of cel.nomes) {
+          lines.push({ text: n, color: '#000000', font: '12px Inter, sans-serif', align: 'left' });
+        }
+        if (cel.temLeito) {
+          const leitoItem = cel.itens.find((e) => e.medio_id === 0);
+          const leitoTexto = leitoItem?.observacao?.toUpperCase() || 'LEITO';
+          lines.push({ text: leitoTexto, color: '#cc0000', font: 'bold 12px Inter, sans-serif', align: 'left' });
+        }
+
+        if (lines.length > maxLines) maxLines = lines.length;
+        rowCells.push({ bg: '#ffffff', lines });
+      }
+
+      celulasData.push(rowCells);
+      rowHeights.push(Math.max(28, maxLines * 15 + 10));
+    }
+
+    const tableRowsH = rowHeights.reduce((acc, h) => acc + h, 0);
+    const tableHeight = headerRowH + tableRowsH;
+
+    // Cálculo prévio do rodapé
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d');
+    const notas = mms.map((mm) => store.notaDoMes(mm)).filter(Boolean).join(' | ');
+
+    let footerHeight = 25;
+    let linhasNotas = [];
+    let linhasFixo = [];
+
+    if (notas) {
+      tempCtx.font = '600 12px Inter, sans-serif';
+      linhasNotas = quebrarTexto(tempCtx, notas, tableWidth);
+      footerHeight += linhasNotas.length * 16 + 8;
+    }
+    if (cfg.rodapeFixo) {
+      tempCtx.font = 'italic 11px Inter, sans-serif';
+      linhasFixo = quebrarTexto(tempCtx, cfg.rodapeFixo, tableWidth);
+      footerHeight += linhasFixo.length * 15 + 8;
+    }
+
+    const totalHeight = headerHeight + tableHeight + footerHeight;
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = totalWidth;
+    canvas.height = totalHeight;
+
+    // Fundo branco
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, totalWidth, totalHeight);
+
+    // 1. Títulos
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    let yTitle = topPadding;
+    for (const hl of headerLines) {
+      const fontSize = parseInt(hl.font.match(/(\d+)px/)[1], 10);
+      ctx.font = hl.font;
+      ctx.fillStyle = hl.color;
+      ctx.fillText(hl.text, totalWidth / 2, yTitle + fontSize / 2);
+      yTitle += fontSize + hl.gap;
+    }
+
+    const startY = headerHeight;
+
+    // 2. Fundos das células
+    // Cabeçalho
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(padding, startY, tableWidth, headerRowH);
+
+    // Linhas de dados
+    let curRowY = startY + headerRowH;
+    for (let r = 0; r < dias.length; r++) {
+      const rowH = rowHeights[r];
+
+      // Fundo coluna DIA
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(padding, curRowY, colDiaWidth, rowH);
+
+      // Fundo colunas de trabalho
+      for (let c = 0; c < trabs.length; c++) {
+        const colX = padding + colDiaWidth + c * colWidth;
+        ctx.fillStyle = celulasData[r][c].bg;
+        ctx.fillRect(colX, curRowY, colWidth, rowH);
+      }
+      curRowY += rowH;
+    }
+
+    // 3. Linhas da grade (borda vermelha #cc0000 de 2px, idêntica à impressão)
+    ctx.strokeStyle = '#cc0000';
+    ctx.lineWidth = 2;
+
+    // Borda externa
+    ctx.strokeRect(padding, startY, tableWidth, tableHeight);
+
+    // Divisórias horizontais
+    ctx.beginPath();
+    let lineY = startY + headerRowH;
+    ctx.moveTo(padding, lineY);
+    ctx.lineTo(padding + tableWidth, lineY);
+
+    for (let r = 0; r < dias.length - 1; r++) {
+      lineY += rowHeights[r];
+      ctx.moveTo(padding, lineY);
+      ctx.lineTo(padding + tableWidth, lineY);
+    }
+
+    // Divisórias verticais
+    const xDia = padding + colDiaWidth;
+    ctx.moveTo(xDia, startY);
+    ctx.lineTo(xDia, startY + tableHeight);
+
+    for (let c = 0; c < trabs.length - 1; c++) {
+      const colX = xDia + (c + 1) * colWidth;
+      ctx.moveTo(colX, startY);
+      ctx.lineTo(colX, startY + tableHeight);
+    }
+    ctx.stroke();
+
+    // 4. Textos do cabeçalho
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 13px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('DIA', padding + colDiaWidth / 2, startY + headerRowH / 2);
+
+    for (let c = 0; c < trabs.length; c++) {
+      const colX = padding + colDiaWidth + c * colWidth;
+      const nomeTrab = formatarTextoLargura(ctx, trabs[c].nome, colWidth - 8);
+      ctx.fillText(nomeTrab, colX + colWidth / 2, startY + headerRowH / 2);
+    }
+
+    // 5. Textos das linhas de dados
+    curRowY = startY + headerRowH;
+    for (let r = 0; r < dias.length; r++) {
+      const d = dias[r];
+      const rowH = rowHeights[r];
+
+      // Texto da coluna DIA
+      const nomeMesAbrev = ABREV_MES[Number(d.iso.slice(5, 7)) - 1];
+      const mesCap = nomeMesAbrev[0].toUpperCase() + nomeMesAbrev.slice(1);
+      const diaTexto = `${DIAS_CURTO[d.dow]} ${String(d.dia).padStart(2, '0')}/${mesCap}`;
+
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 13px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(diaTexto, padding + colDiaWidth / 2, curRowY + rowH / 2);
+
+      // Texto das células
+      for (let c = 0; c < trabs.length; c++) {
+        const colX = padding + colDiaWidth + c * colWidth;
+        const cell = celulasData[r][c];
+        const lines = cell.lines;
+        const lineH = 15;
+        const totalTextH = lines.length * lineH;
+        const startTextY = curRowY + (rowH - totalTextH) / 2 + lineH / 2;
+
+        for (let i = 0; i < lines.length; i++) {
+          const l = lines[i];
+          ctx.fillStyle = l.color;
+          ctx.font = l.font;
+          ctx.textBaseline = 'middle';
+          const textY = startTextY + i * lineH;
+
+          if (l.align === 'center') {
+            ctx.textAlign = 'center';
+            ctx.fillText(l.text, colX + colWidth / 2, textY);
+          } else {
+            ctx.textAlign = 'left';
+            const txt = formatarTextoLargura(ctx, l.text, colWidth - 14);
+            ctx.fillText(txt, colX + 8, textY);
+          }
+        }
+      }
+      curRowY += rowH;
+    }
+
+    // 6. Rodapé
+    let currentFooterY = startY + tableHeight + 12;
+    if (linhasNotas.length) {
+      ctx.fillStyle = '#000000';
+      ctx.font = '600 12px Inter, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      for (const ln of linhasNotas) {
+        ctx.fillText(ln, padding, currentFooterY);
+        currentFooterY += 16;
       }
     }
 
-    let footerY = startY + tableHeight + 25;
-    const notas = mms.map((mm) => store.notaDoMes(mm)).filter(Boolean).join(' | ');
-    if (notas) {
-      ctx.fillStyle = '#334155';
-      ctx.font = '12px Inter, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(notas, totalWidth / 2, footerY);
-      footerY += 20;
-    }
-
-    if (cfg.rodapeFixo) {
+    if (linhasFixo.length) {
+      currentFooterY += 4;
       ctx.fillStyle = '#64748b';
-      ctx.font = 'italic 10px Inter, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(cfg.rodapeFixo, totalWidth / 2, footerY);
+      ctx.font = 'italic 11px Inter, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      for (const ln of linhasFixo) {
+        ctx.fillText(ln, padding, currentFooterY);
+        currentFooterY += 15;
+      }
     }
 
     canvas.toBlob((blob) => {
@@ -761,7 +948,7 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
       a.click();
       URL.revokeObjectURL(url);
       toast('Imagem da grade baixada com sucesso!');
-    });
+    }, 'image/png');
   }
 
   // ---- Distribuição automática do mês ----
