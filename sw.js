@@ -1,5 +1,5 @@
 // Service Worker para EscalaVale (PWA Offline)
-const CACHE_NAME = 'escalavale-v1.9';
+const CACHE_NAME = 'escalavale-v2.0';
 
 const RECURSOS_ESTATICOS = [
   './',

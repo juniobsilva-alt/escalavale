@@ -377,7 +377,6 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
               <td class="col-dia"><strong>${DIAS_CURTO[d.dow]} ${String(d.dia).padStart(2, '0')}/${(() => { const m = ABREV_MES[Number(d.iso.slice(5, 7)) - 1]; return m[0].toUpperCase() + m.slice(1); })()}</strong></td>
               ${trabalhos.map((t) => {
                 const semGrade = store.horariosDoTrabalhoNoDia(t.id, d.dow).length === 0;
-                if (semGrade) return `<td class="fora-grade"><span class="muted">—</span></td>`;
                 const c = celulaMensal(d.iso, t.id);
                 const mediunsItens = c.itens.filter((e) => e.medio_id > 0);
                 const corpoNomes = mediunsItens.map((item) => {
@@ -389,7 +388,12 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
                 const leito = c.temLeito ? `<div class="nome leito">${escapar(c.itens.find((e) => e.medio_id === 0)?.observacao?.toUpperCase() || 'LEITO')}</div>` : '';
                 const vazia = !mediunsItens.length && !c.temLeito;
                 const celulaDestacada = mediumDestacadoId && c.itens.some((e) => e.medio_id === mediumDestacadoId);
-                return `<td class="${vazia ? 'vazia' : ''} ${celulaDestacada ? 'celula-destaque' : ''}"><div class="celula" data-dia="${d.iso}" data-trab="${t.id}" role="button" tabindex="0" aria-label="${escapar(t.nome)} ${d.iso}">${corpoNomes}${leito}${vazia ? '<span class="muted">—</span>' : ''}</div></td>`;
+                const cls = [
+                  vazia ? 'vazia' : '',
+                  semGrade ? 'fora-grade' : '',
+                  celulaDestacada ? 'celula-destaque' : '',
+                ].filter(Boolean).join(' ');
+                return `<td class="${cls}" data-dia="${d.iso}" data-trab="${t.id}" role="button" tabindex="0" aria-label="${escapar(t.nome)} ${d.iso}"><div class="celula">${corpoNomes}${leito}${vazia ? '<span class="muted">—</span>' : ''}</div></td>`;
               }).join('')}
             </tr>`).join('')}
           </tbody>
@@ -505,7 +509,7 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
       } catch (err) { toast(err.message, 'error'); return; }
       desenharMensal();
     });
-    area.querySelectorAll('.celula, .grade-card-item').forEach((cell) => {
+    area.querySelectorAll('td[data-dia][data-trab], .grade-card-item[data-dia][data-trab]').forEach((cell) => {
       cell.onclick = (e) => {
         const nomeEl = e.target.closest('.nome[data-escala-id]');
         if (nomeEl) {
@@ -1341,10 +1345,16 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
     raiz.querySelector('#esc-btn-cancelar').onclick = fechar;
 
     async function vincular(medioId) {
-      const ref = horarios[0];
+      let ref = horarios[0];
       if (!ref) {
-        toast('Não há horário cadastrado para este trabalho neste dia da semana.', 'error');
-        return;
+        const modelo = MODELOS_GRADE[store.contextoAtual] ?? MODELOS_GRADE.dirigentes;
+        ref = await store.criar('horarios', {
+          trabalho_id: trabalhoId,
+          dia_semana: dow,
+          hora_inicio: modelo.hora?.[0] || '19:00',
+          hora_fim: modelo.hora?.[1] || '21:00',
+        });
+        horarios.push(ref);
       }
       if (restrito && !elegiveis.some((m) => m.id === medioId)) {
         toast('Somente médiuns com função Ajanã nesta escala.', 'error');
@@ -1414,19 +1424,28 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
     };
 
     raiz.querySelector('#esc-btn-leito').onclick = async () => {
-      const ref = horarios[0];
+      let ref = horarios[0];
+      if (!ref) {
+        const modelo = MODELOS_GRADE[store.contextoAtual] ?? MODELOS_GRADE.dirigentes;
+        ref = await store.criar('horarios', {
+          trabalho_id: trabalhoId,
+          dia_semana: dow,
+          hora_inicio: modelo.hora?.[0] || '19:00',
+          hora_fim: modelo.hora?.[1] || '21:00',
+        });
+        horarios.push(ref);
+      }
       try {
         store.salvarSnapshotUndo(`Marcar LEITO em ${trabalho?.nome || 'Trabalho'}`);
         await store.criar('escala', {
           medio_id: 0, trabalho_id: trabalhoId, data: dataISO,
-          horario_id: ref?.id ?? 0, presente: 0, observacao: LEITO,
+          horario_id: ref.id, presente: 0, observacao: LEITO,
         });
         toast('LEITO marcado.');
         fechar();
         desenharMensal();
       } catch (err) {
         toast(err.message, 'error');
-      }
     };
   }
 
