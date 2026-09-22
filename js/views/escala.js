@@ -1446,6 +1446,7 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
         desenharMensal();
       } catch (err) {
         toast(err.message, 'error');
+      }
     };
   }
 
