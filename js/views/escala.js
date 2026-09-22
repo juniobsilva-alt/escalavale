@@ -506,6 +506,15 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
     const trabs = trabalhosDaGrade();
     const mms = mesesDaGrade();
     const periodo = rotuloPeriodo();
+    const dias = mms.flatMap((mm) => {
+      const [a, n] = mm.split('-').map(Number);
+      return diasDeSessaoDoMes(a, n, store.contextoAtual, trabs.map((t) => t.id));
+    });
+
+    const hoje = new Date();
+    const hojeIso = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+    const diaDefault = dias.find((d) => d.iso >= hojeIso)?.iso ?? dias[dias.length - 1]?.iso ?? dias[0]?.iso ?? '';
+
     raiz.innerHTML = `
       <div class="modal-backdrop" id="wa-resumo-backdrop">
         <div class="modal" role="dialog" aria-modal="true" aria-label="Compartilhar escala no WhatsApp">
@@ -514,8 +523,19 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
           <div class="field">
             <label for="wa-sel-tipo">Tipo de resumo</label>
             <select id="wa-sel-tipo">
+              <option value="dia" selected>Escala por dia</option>
               <option value="completo">Escala Completa do Período</option>
               <option value="trabalho">Escala de um Trabalho Específico</option>
+            </select>
+          </div>
+          <div class="field" id="field-wa-dia">
+            <label for="wa-sel-dia">Selecione o Dia</label>
+            <select id="wa-sel-dia">
+              ${dias.map((d) => {
+                const [, mNum, diaStr] = d.iso.split('-');
+                const sel = d.iso === diaDefault ? 'selected' : '';
+                return `<option value="${d.iso}" ${sel}>${DIAS_SEMANA[d.dow]}, ${diaStr}/${mNum}</option>`;
+              }).join('')}
             </select>
           </div>
           <div class="field" id="field-wa-trab" style="display:none">
@@ -542,17 +562,53 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
     });
 
     const selTipo = raiz.querySelector('#wa-sel-tipo');
+    const selDia = raiz.querySelector('#wa-sel-dia');
+    const fDia = raiz.querySelector('#field-wa-dia');
     const selTrab = raiz.querySelector('#wa-sel-trab');
     const fTrab = raiz.querySelector('#field-wa-trab');
     const txtPreview = raiz.querySelector('#wa-preview');
 
+    const tituloContexto = store.nomeContexto().toUpperCase().startsWith('ESCALA')
+      ? store.nomeContexto().toUpperCase()
+      : `ESCALA DE ${store.nomeContexto().toUpperCase()}`;
+
+    function formatarEscalaDiaWhatsApp(dataIso) {
+      if (!dataIso) return 'Nenhum dia disponível.';
+      const d = dias.find((x) => x.iso === dataIso);
+      const dow = d ? d.dow : diaSemanaDe(dataIso);
+      const [a, mNum, diaStr] = dataIso.split('-');
+      const diaSem = DIAS_SEMANA[dow];
+
+      let texto = `*${tituloContexto}*\n`;
+      texto += `📅 *${diaSem}, ${diaStr}/${mNum}/${a}*\n\n`;
+
+      let temTrabalho = false;
+      for (const t of trabs) {
+        if (store.horariosDoTrabalhoNoDia(t.id, dow).length === 0) continue;
+        temTrabalho = true;
+        const c = celulaMensal(dataIso, t.id);
+        let nomes = '—';
+        if (c.nomes.length) {
+          nomes = c.nomes.join(', ');
+          if (c.temLeito) nomes += ' [LEITO]';
+        } else if (c.temLeito) {
+          const leitoItem = c.itens.find((e) => e.medio_id === 0);
+          nomes = `[${leitoItem?.observacao?.toUpperCase() || 'LEITO'}]`;
+        }
+        texto += `• *${t.nome}:* ${nomes}\n`;
+      }
+
+      if (!temTrabalho) {
+        texto += `_Nenhum trabalho cadastrado para este dia._\n`;
+      }
+
+      texto += `\n_Salve Deus!_`;
+      return texto;
+    }
+
     function formatarEscalaCompletaWhatsApp() {
-      let texto = `*ESCALA DE ${store.nomeContexto().toUpperCase()}*\n`;
+      let texto = `*${tituloContexto}*\n`;
       texto += `*Período: ${periodo}*\n\n`;
-      const dias = mms.flatMap((mm) => {
-        const [a, n] = mm.split('-').map(Number);
-        return diasDeSessaoDoMes(a, n, store.contextoAtual, trabs.map((t) => t.id));
-      });
 
       for (const d of dias) {
         const [, mNum, diaStr] = d.iso.split('-');
@@ -572,16 +628,16 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
     function formatarEscalaTrabalhoWhatsApp(trabalhoId) {
       const t = store.db.trabalhos.find((x) => x.id === trabalhoId);
       const nomeTrabalho = t?.nome || 'Trabalho';
-      let texto = `*ESCALA DE ${store.nomeContexto().toUpperCase()}*\n`;
+      let texto = `*${tituloContexto}*\n`;
       texto += `*Trabalho: ${nomeTrabalho.toUpperCase()}*\n`;
       texto += `*Período: ${periodo}*\n\n`;
 
-      const dias = mms.flatMap((mm) => {
+      const diasDoTrab = mms.flatMap((mm) => {
         const [a, n] = mm.split('-').map(Number);
         return diasDeSessaoDoMes(a, n, store.contextoAtual, [trabalhoId]);
       });
 
-      for (const d of dias) {
+      for (const d of diasDoTrab) {
         const [, mNum, diaStr] = d.iso.split('-');
         const c = celulaMensal(d.iso, trabalhoId);
         const nomes = c.nomes.length ? c.nomes.join(', ') : (c.temLeito ? '[LEITO]' : 'Vaga em aberto');
@@ -592,16 +648,23 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
     }
 
     function atualizarTexto() {
-      if (selTipo.value === 'completo') {
+      if (selTipo.value === 'dia') {
+        fDia.style.display = '';
+        fTrab.style.display = 'none';
+        txtPreview.value = formatarEscalaDiaWhatsApp(selDia.value);
+      } else if (selTipo.value === 'completo') {
+        fDia.style.display = 'none';
         fTrab.style.display = 'none';
         txtPreview.value = formatarEscalaCompletaWhatsApp();
       } else {
+        fDia.style.display = 'none';
         fTrab.style.display = '';
         txtPreview.value = formatarEscalaTrabalhoWhatsApp(Number(selTrab.value));
       }
     }
 
     selTipo.onchange = atualizarTexto;
+    selDia.onchange = atualizarTexto;
     selTrab.onchange = atualizarTexto;
     atualizarTexto();
 
