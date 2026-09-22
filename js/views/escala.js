@@ -348,15 +348,21 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
                   const semGrade = store.horariosDoTrabalhoNoDia(t.id, d.dow).length === 0;
                   if (semGrade) return '';
                   const c = celulaMensal(d.iso, t.id);
-                  const vazia = !c.nomes.length && !c.temLeito;
+                  const mediunsItens = c.itens.filter((e) => e.medio_id > 0);
+                  const vazia = !mediunsItens.length && !c.temLeito;
                   const temAlvo = mediumDestacadoId && c.itens.some((e) => e.medio_id === mediumDestacadoId);
                   return `
-                    <button class="grade-card-item ${vazia ? 'vazia' : ''} ${temAlvo ? 'destaque-medium' : ''}" data-dia="${d.iso}" data-trab="${t.id}">
+                    <div class="grade-card-item ${vazia ? 'vazia' : ''} ${temAlvo ? 'destaque-medium' : ''}" data-dia="${d.iso}" data-trab="${t.id}" role="button" tabindex="0">
                       <span class="card-item-trab">${escapar(t.nome)}</span>
                       <span class="card-item-nomes">
-                        ${c.temLeito ? '<span class="pill danger">LEITO</span>' : (c.nomes.length ? c.nomes.map((n) => escapar(n)).join(', ') : '<span class="muted">—</span>')}
+                        ${c.temLeito ? '<span class="pill danger">LEITO</span>' : (mediunsItens.length ? mediunsItens.map((item) => {
+                          const mid = item.medio_id;
+                          const n = store.nomeMedium(mid);
+                          const ehAlvo = mediumDestacadoId && mid === mediumDestacadoId;
+                          return `<span class="nome ${ehAlvo ? 'destaque-medium' : ''}" data-escala-id="${item.id}" data-medio-id="${mid}" title="Clique para trocar ${escapar(n)}">${escapar(n)}</span>`;
+                        }).join(', ') : '<span class="muted">—</span>')}
                       </span>
-                    </button>
+                    </div>
                   `;
                 }).join('')}
               </div>
@@ -373,15 +379,17 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
                 const semGrade = store.horariosDoTrabalhoNoDia(t.id, d.dow).length === 0;
                 if (semGrade) return `<td class="fora-grade"><span class="muted">—</span></td>`;
                 const c = celulaMensal(d.iso, t.id);
-                const corpoNomes = c.nomes.map((n, idx) => {
-                  const mid = c.itens[idx]?.medio_id;
+                const mediunsItens = c.itens.filter((e) => e.medio_id > 0);
+                const corpoNomes = mediunsItens.map((item) => {
+                  const mid = item.medio_id;
+                  const n = store.nomeMedium(mid);
                   const ehAlvo = mediumDestacadoId && mid === mediumDestacadoId;
-                  return `<div class="nome ${ehAlvo ? 'destaque-medium' : ''}">${escapar(n)}</div>`;
+                  return `<div class="nome ${ehAlvo ? 'destaque-medium' : ''}" data-escala-id="${item.id}" data-medio-id="${mid}" role="button" tabindex="0" title="Clique para trocar ou substituir ${escapar(n)}">${escapar(n)}</div>`;
                 }).join('');
                 const leito = c.temLeito ? `<div class="nome leito">${escapar(c.itens.find((e) => e.medio_id === 0)?.observacao?.toUpperCase() || 'LEITO')}</div>` : '';
-                const vazia = !c.nomes.length && !c.temLeito;
+                const vazia = !mediunsItens.length && !c.temLeito;
                 const celulaDestacada = mediumDestacadoId && c.itens.some((e) => e.medio_id === mediumDestacadoId);
-                return `<td class="${vazia ? 'vazia' : ''} ${celulaDestacada ? 'celula-destaque' : ''}"><button class="celula" data-dia="${d.iso}" data-trab="${t.id}" aria-label="${escapar(t.nome)} ${d.iso}">${corpoNomes}${leito}${vazia ? '<span class="muted">—</span>' : ''}</button></td>`;
+                return `<td class="${vazia ? 'vazia' : ''} ${celulaDestacada ? 'celula-destaque' : ''}"><div class="celula" data-dia="${d.iso}" data-trab="${t.id}" role="button" tabindex="0" aria-label="${escapar(t.nome)} ${d.iso}">${corpoNomes}${leito}${vazia ? '<span class="muted">—</span>' : ''}</div></td>`;
               }).join('')}
             </tr>`).join('')}
           </tbody>
@@ -497,7 +505,22 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
       } catch (err) { toast(err.message, 'error'); return; }
       desenharMensal();
     });
-    area.querySelectorAll('.celula, .grade-card-item').forEach((b) => (b.onclick = () => abrirCelula(b.dataset.dia, Number(b.dataset.trab))));
+    area.querySelectorAll('.celula, .grade-card-item').forEach((cell) => {
+      cell.onclick = (e) => {
+        const nomeEl = e.target.closest('.nome[data-escala-id]');
+        if (nomeEl) {
+          e.stopPropagation();
+          abrirModalTrocar({
+            escalaId: Number(nomeEl.dataset.escalaId),
+            medioId: Number(nomeEl.dataset.medioId),
+            dataISO: cell.dataset.dia,
+            trabalhoId: Number(cell.dataset.trab),
+          });
+          return;
+        }
+        abrirCelula(cell.dataset.dia, Number(cell.dataset.trab));
+      };
+    });
   }
 
   // ---- Modal de Resumo WhatsApp ----
@@ -1082,6 +1105,140 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
     };
   }
 
+  // ---- Modal para Trocar / Substituir Médium da Célula ----
+  function abrirModalTrocar({ escalaId, medioId, dataISO, trabalhoId }) {
+    const raiz = document.getElementById('modal-root');
+    const trabalho = store.db.trabalhos.find((t) => t.id === trabalhoId);
+    const dow = diaSemanaDe(dataISO);
+    const horarios = store.horariosDoTrabalhoNoDia(trabalhoId, dow);
+    const c = celulaMensal(dataISO, trabalhoId);
+    const ocupadosNaCelula = new Set(c.itens.map((e) => e.medio_id));
+    const restrito = store.contextoAtual === 'ajanas';
+    const elegiveis = store.mediunsParaMontagem();
+    const livres = elegiveis.filter((m) => !ocupadosNaCelula.has(m.id) && m.id !== medioId);
+    const nomeAtual = store.nomeMedium(medioId);
+
+    raiz.innerHTML = `
+      <div class="modal-backdrop" id="troca-backdrop">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Trocar médium">
+          <h2>🔄 Trocar / Substituir Médium</h2>
+          <p class="modal-sub">${escapar(trabalho?.nome || 'Trabalho')} · ${formatarData(dataISO)} (${DIAS_SEMANA[dow]})${horarios.length ? ` · ${horarios[0].hora_inicio}–${horarios[0].hora_fim}` : ''}</p>
+
+          <div class="field">
+            <label>Médium escalado atualmente</label>
+            <div style="font-size:1.05rem;font-weight:700;color:var(--text);padding:4px 0 8px">
+              ${escapar(nomeAtual)}
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="troca-sel-novo">Substituir por</label>
+            <select id="troca-sel-novo" style="font-size:.95rem;padding:8px 10px;width:100%">
+              <option value="">— Selecione o substituto —</option>
+              ${livres.map((m) => `<option value="${m.id}">${escapar(m.nome)}${m.funcao ? ` (${m.funcao})` : ''}</option>`).join('')}
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="troca-nome-novo">Ou cadastrar e vincular novo médium</label>
+            <div class="linha-add">
+              <input id="troca-nome-novo" maxlength="100" placeholder="Nome do novo médium" />
+              <button class="btn btn-sm" id="troca-btn-criar">Cadastrar e substituir</button>
+            </div>
+          </div>
+
+          <div class="quick-actions" style="margin-top:16px">
+            <button class="btn btn-primary" id="troca-btn-confirmar">Confirmar Substituição</button>
+            <button class="btn btn-danger" id="troca-btn-remover">Remover da Escala</button>
+            <button class="btn btn-ghost" id="troca-btn-cancelar">Cancelar</button>
+          </div>
+        </div>
+      </div>`;
+
+    const fechar = () => {
+      raiz.innerHTML = '';
+      document.removeEventListener('keydown', aoTecla);
+    };
+    function aoTecla(e) { if (e.key === 'Escape') fechar(); }
+    document.addEventListener('keydown', aoTecla);
+
+    raiz.querySelector('#troca-backdrop').addEventListener('mousedown', (e) => {
+      if (e.target.id === 'troca-backdrop') fechar();
+    });
+    raiz.querySelector('#troca-btn-cancelar').onclick = fechar;
+
+    // Confirmar substituição por médium existente
+    raiz.querySelector('#troca-btn-confirmar').onclick = async () => {
+      const sel = raiz.querySelector('#troca-sel-novo');
+      const novoId = Number(sel.value);
+      if (!novoId) {
+        toast('Selecione um médium substituto.', 'warn');
+        return;
+      }
+      const ref = horarios[0];
+      if (ref && haConflitoHorario(novoId, dataISO, ref.hora_inicio, ref.hora_fim, escalaId)) {
+        if (!confirm('Aviso: este médium já possui escala neste horário. Deseja substituir mesmo assim?')) {
+          return;
+        }
+      }
+      if (!mediumDisponivelNaData(novoId, dataISO)) {
+        if (!confirm('Aviso: este médium tem restrição de disponibilidade nesta data. Deseja substituir mesmo assim?')) {
+          return;
+        }
+      }
+
+      try {
+        const novoNome = store.nomeMedium(novoId);
+        store.salvarSnapshotUndo(`Substituir ${nomeAtual} por ${novoNome}`);
+        await store.atualizar('escala', escalaId, { medio_id: novoId });
+        toast(`Substituído: ${nomeAtual} ➔ ${novoNome}`);
+        fechar();
+        desenharMensal();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    };
+
+    // Cadastrar novo médium e substituir
+    raiz.querySelector('#troca-btn-criar').onclick = async () => {
+      const input = raiz.querySelector('#troca-nome-novo');
+      const nome = input.value.trim();
+      if (!nome) {
+        toast('Informe o nome do médium.', 'warn');
+        return;
+      }
+      try {
+        let m = elegiveis.find((x) => x.nome.toLowerCase() === nome.toLowerCase());
+        if (!m) {
+          m = await store.criar('mediuns', {
+            nome, telefone: '', email: '', observacao: '',
+            funcao: restrito ? 'Ajanã' : '', ativo: 1,
+          });
+        }
+        store.salvarSnapshotUndo(`Substituir ${nomeAtual} por ${m.nome}`);
+        await store.atualizar('escala', escalaId, { medio_id: m.id });
+        toast(`Cadastrado e substituído: ${nomeAtual} ➔ ${m.nome}`);
+        fechar();
+        desenharMensal();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    };
+
+    // Remover da escala
+    raiz.querySelector('#troca-btn-remover').onclick = async () => {
+      try {
+        store.salvarSnapshotUndo(`Remover ${nomeAtual} da escala`);
+        await store.excluir('escala', escalaId);
+        toast(`Removido: ${nomeAtual}`, 'info');
+        fechar();
+        desenharMensal();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    };
+  }
+
   // ---- Modal da célula (vários médiuns + LEITO) ----
   function abrirCelula(dataISO, trabalhoId) {
     const trabalho = store.db.trabalhos.find((t) => t.id === trabalhoId);
@@ -1143,7 +1300,10 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
                     ${e.observacao === LEITO ? '<strong class="leito">LEITO</strong>' : `<strong>${escapar(store.nomeMedium(e.medio_id))}</strong>${rf ? ` <small class="pill info" style="font-size:.65rem;padding:2px 6px">Fixo (Pos ${rf.posicao || 1})</small>` : ''}`}
                     ${wa ? `<a href="${wa}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ghost btn-wa" style="padding:2px 6px;text-decoration:none" title="Notificar pelo WhatsApp">📱</a>` : ''}
                   </div>
-                  <button class="btn btn-sm" data-rm="${e.id}">Remover</button>
+                  <div style="display:flex;gap:4px">
+                    ${e.medio_id > 0 ? `<button class="btn btn-sm" data-trocar-escala="${e.id}" data-medio="${e.medio_id}">Trocar</button>` : ''}
+                    <button class="btn btn-sm" data-rm="${e.id}">Remover</button>
+                  </div>
                 </li>`;
               }).join('')}
             </ul>`}
@@ -1174,6 +1334,17 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
       raiz.querySelectorAll('[data-escalar-fixo]').forEach((b) => {
         b.onclick = async () => {
           await vincular(Number(b.dataset.escalarFixo));
+        };
+      });
+      raiz.querySelectorAll('[data-trocar-escala]').forEach((b) => {
+        b.onclick = () => {
+          fechar();
+          abrirModalTrocar({
+            escalaId: Number(b.dataset.trocarEscala),
+            medioId: Number(b.dataset.medio),
+            dataISO,
+            trabalhoId,
+          });
         };
       });
       raiz.querySelectorAll('[data-rm]').forEach((b) => (b.onclick = async () => {

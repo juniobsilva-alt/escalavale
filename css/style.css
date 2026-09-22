@@ -286,6 +286,18 @@ table.grade td.vazia { background: #fafafa; }
 }
 .celula:hover { background: #fff7ed; outline: 2px dashed var(--warn); border-radius: 6px; }
 .celula .nome { display: block; padding: 0; line-height: 1.15; }
+.celula .nome[data-escala-id] {
+  cursor: pointer;
+  border-radius: 2px;
+  padding: 1px 2px;
+  margin: -1px -2px;
+  transition: background .12s, color .12s;
+}
+.celula .nome[data-escala-id]:hover {
+  background: #dbeafe;
+  color: #1d4ed8;
+  text-decoration: underline;
+}
 .nome.leito, strong.leito { color: #c00; font-weight: 700; letter-spacing: .08em; line-height: 1.15; }
 .rodape-grade { font-size: .78rem; font-weight: 600; margin: 6px 0 12px; }
 .linha-add { display: flex; gap: 8px; }
