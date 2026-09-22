@@ -278,7 +278,7 @@ table.grade td.vazia, table.grade td.fora-grade { text-align: center; }
 table.grade thead th { background: #fff; color: #000; text-transform: none; font-size: .78rem; text-align: center; padding: 4px 4px; }
 table.grade .col-dia { min-width: 60px; text-align: center; background: #fff; position: sticky; left: 0; }
 table.grade td { min-width: 90px; max-width: 140px; }
-table.grade td[data-dia] { cursor: pointer; }
+table.grade td[data-dia] { cursor: pointer; user-select: none; -webkit-user-select: none; }
 table.grade td.vazia { background: #fafafa; }
 table.grade td[data-dia]:hover { background: #fff7ed; outline: 1px dashed var(--warn); }
 table.grade td.vazia[data-dia]:hover, table.grade td.fora-grade[data-dia]:hover { background: #fef3c7; }

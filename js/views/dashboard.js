@@ -8,12 +8,13 @@ export function renderDashboard(el, irPara) {
   const slots = slotsDaData(hoje);
   const preenchidos = slots.filter((s) => s.medio_id > 0).length;
   const proximas = proximasEscalas(5);
+  const nomeUsuario = store.usuarioAtual?.nome ? `${escapar(store.usuarioAtual.nome)} ` : '';
 
   el.innerHTML = `
     <div class="hero-logo"><img src="img/salvedeus.jpeg" alt="Salve Deus" width="223" height="223" /></div>
     <div class="page-head">
       <div>
-        <h1>Olá, bem-vindo 👋</h1>
+        <h1>Olá, seja bem vindo ${nomeUsuario}👋</h1>
         <p>Escala de hoje (${formatarData(hoje)}): ${preenchidos}/${slots.length} vagas preenchidas.</p>
       </div>
       <div class="spacer"></div>

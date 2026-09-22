@@ -895,7 +895,7 @@ export function haConflitoHorario(medioId, dataISO, horaInicio, horaFim, ignorar
   });
 }
 
-function ocorrenciaNoMes(data, diaSemana) {
+export function ocorrenciaNoMes(data, diaSemana) {
   const ano = data.getFullYear();
   const mes = data.getMonth();
   let cont = 0;
@@ -905,7 +905,7 @@ function ocorrenciaNoMes(data, diaSemana) {
   return cont;
 }
 
-function totalOcorrenciasNoMes(data, diaSemana) {
+export function totalOcorrenciasNoMes(data, diaSemana) {
   const ano = data.getFullYear();
   const mes = data.getMonth();
   const ultimoDia = new Date(ano, mes + 1, 0).getDate();

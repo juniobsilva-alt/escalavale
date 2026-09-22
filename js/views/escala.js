@@ -3,6 +3,7 @@ import {
   haConflitoHorario, mediumDisponivelNaData,
   DIAS_SEMANA, DIAS_CURTO, MESES, SITUACAO, LEITO,
   MODELOS_GRADE, GRADE_CONFIG, FUNCAO_POR_CONTEXTO, GRADES_AJANAS,
+  ocorrenciaNoMes, totalOcorrenciasNoMes,
 } from '../store.js';
 import { hojeISO, formatarData, diaSemanaDe, escapar, toast, pillSituacao, estadoVazio, limparTelefone } from '../utils.js';
 
