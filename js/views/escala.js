@@ -518,7 +518,25 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
           });
           return;
         }
-        abrirCelula(cell.dataset.dia, Number(cell.dataset.trab));
+
+        const dataISO = cell.dataset.dia;
+        const trabalhoId = Number(cell.dataset.trab);
+        const c = celulaMensal(dataISO, trabalhoId);
+        const mediunsItens = c.itens.filter((x) => x.medio_id > 0);
+
+        // Se ainda não houver médium cadastrado nesta célula, abre diretamente a tela para selecionar médium
+        if (mediunsItens.length === 0 && !c.temLeito) {
+          abrirModalSelecionarMedium({ dataISO, trabalhoId });
+          return;
+        }
+
+        abrirCelula(dataISO, trabalhoId);
+      };
+      cell.onkeydown = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          cell.click();
+        }
       };
     });
   }
@@ -1231,6 +1249,179 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
         store.salvarSnapshotUndo(`Remover ${nomeAtual} da escala`);
         await store.excluir('escala', escalaId);
         toast(`Removido: ${nomeAtual}`, 'info');
+        fechar();
+        desenharMensal();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    };
+  }
+
+  // ---- Modal para Selecionar / Escalar Médium (quando a célula ainda não tem médium) ----
+  function abrirModalSelecionarMedium({ dataISO, trabalhoId }) {
+    const raiz = document.getElementById('modal-root');
+    const trabalho = store.db.trabalhos.find((t) => t.id === trabalhoId);
+    const dow = diaSemanaDe(dataISO);
+    const horarios = store.horariosDoTrabalhoNoDia(trabalhoId, dow);
+    const c = celulaMensal(dataISO, trabalhoId);
+    const ocupadosNaCelula = new Set(c.itens.map((e) => e.medio_id));
+    const restrito = store.contextoAtual === 'ajanas';
+    const elegiveis = store.mediunsParaMontagem();
+    const livres = elegiveis.filter((m) => !ocupadosNaCelula.has(m.id));
+
+    const dataDt = new Date(dataISO + 'T12:00:00');
+    const oco = ocorrenciaNoMes(dataDt, dow);
+    const totalOco = totalOcorrenciasNoMes(dataDt, dow);
+    const regrasFixas = store.db.disponibilidade.filter((r) =>
+      r.ativo === 1 &&
+      (r.contexto ?? 'dirigentes') === store.contextoAtual &&
+      r.trabalho_id === trabalhoId &&
+      r.dia_semana === dow &&
+      (r.ocorrencia === oco || (r.ocorrencia === 6 && oco === totalOco))
+    ).sort((a, b) => (a.posicao ?? 1) - (b.posicao ?? 1));
+
+    raiz.innerHTML = `
+      <div class="modal-backdrop" id="sel-medium-backdrop">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Selecionar médium">
+          <h2>➕ Selecionar Médium</h2>
+          <p class="modal-sub">${escapar(trabalho?.nome || 'Trabalho')} · ${formatarData(dataISO)} (${DIAS_SEMANA[dow]})${horarios.length ? ` · ${horarios[0].hora_inicio}–${horarios[0].hora_fim}` : ' · sem horário neste dia'}</p>
+
+          ${regrasFixas.length > 0 ? `
+            <div style="margin:6px 0 12px;padding:8px 12px;background:#e0e7ff;border:1px solid #c7d2fe;border-radius:var(--radius-sm)">
+              <div style="color:#3730a3;font-size:.85rem;font-weight:600;margin-bottom:6px">
+                📌 Trabalhos fixos deste dia:
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                ${regrasFixas.map((rf) => {
+                  const nome = store.nomeMedium(rf.medio_id);
+                  return `
+                    <div style="display:flex;align-items:center;justify-content:space-between;font-size:.85rem">
+                      <span style="color:#1e3a8a"><strong>Posição ${rf.posicao || 1}:</strong> ${escapar(nome)}</span>
+                      <button class="btn btn-sm btn-primary" data-escalar-fixo="${rf.medio_id}" style="padding:2px 8px;font-size:.78rem">+ Escalar fixo</button>
+                    </div>`;
+                }).join('')}
+              </div>
+            </div>` : ''}
+
+          <div class="field">
+            <label for="esc-sel-medium">Selecione o médium</label>
+            ${restrito ? '<p class="hint muted">Somente médiuns com função Ajanã.</p>' : ''}
+            <select id="esc-sel-medium" style="font-size:.95rem;padding:8px 10px;width:100%">
+              <option value="">— Selecione um médium —</option>
+              ${livres.map((m) => `<option value="${m.id}">${escapar(m.nome)}${m.funcao ? ` (${m.funcao})` : ''}</option>`).join('')}
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="esc-novo-nome">Ou cadastrar e vincular novo médium</label>
+            <div class="linha-add">
+              <input id="esc-novo-nome" maxlength="100" placeholder="Nome do novo médium" />
+              <button class="btn btn-sm" id="esc-btn-criar">Cadastrar e escalar</button>
+            </div>
+          </div>
+
+          <div class="quick-actions" style="margin-top:16px">
+            <button class="btn btn-primary" id="esc-btn-confirmar">Confirmar</button>
+            <button class="btn btn-sm" id="esc-btn-leito">Marcar LEITO</button>
+            <button class="btn btn-ghost" id="esc-btn-cancelar">Cancelar</button>
+          </div>
+        </div>
+      </div>`;
+
+    const fechar = () => {
+      raiz.innerHTML = '';
+      document.removeEventListener('keydown', aoTecla);
+    };
+    function aoTecla(e) { if (e.key === 'Escape') fechar(); }
+    document.addEventListener('keydown', aoTecla);
+
+    raiz.querySelector('#sel-medium-backdrop').addEventListener('mousedown', (e) => {
+      if (e.target.id === 'sel-medium-backdrop') fechar();
+    });
+    raiz.querySelector('#esc-btn-cancelar').onclick = fechar;
+
+    async function vincular(medioId) {
+      const ref = horarios[0];
+      if (!ref) {
+        toast('Não há horário cadastrado para este trabalho neste dia da semana.', 'error');
+        return;
+      }
+      if (restrito && !elegiveis.some((m) => m.id === medioId)) {
+        toast('Somente médiuns com função Ajanã nesta escala.', 'error');
+        return;
+      }
+      if (haConflitoHorario(medioId, dataISO, ref.hora_inicio, ref.hora_fim, 0)) {
+        if (!confirm('Aviso: este médium já possui escala neste horário. Deseja escalar mesmo assim?')) {
+          return;
+        }
+      }
+      if (!mediumDisponivelNaData(medioId, dataISO)) {
+        if (!confirm('Aviso: este médium tem restrição de disponibilidade nesta data. Deseja escalar mesmo assim?')) {
+          return;
+        }
+      }
+
+      try {
+        const nome = store.nomeMedium(medioId);
+        store.salvarSnapshotUndo(`Escalar ${nome} em ${trabalho?.nome || 'Trabalho'}`);
+        await store.criar('escala', {
+          medio_id: medioId, trabalho_id: trabalhoId, data: dataISO,
+          horario_id: ref.id, presente: 0, observacao: '',
+        });
+        toast(`Médium ${nome} escalado com sucesso!`);
+        fechar();
+        desenharMensal();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    }
+
+    raiz.querySelectorAll('[data-escalar-fixo]').forEach((b) => {
+      b.onclick = async () => {
+        await vincular(Number(b.dataset.escalarFixo));
+      };
+    });
+
+    raiz.querySelector('#esc-btn-confirmar').onclick = async () => {
+      const sel = raiz.querySelector('#esc-sel-medium');
+      const medioId = Number(sel.value);
+      if (!medioId) {
+        toast('Selecione um médium.', 'warn');
+        return;
+      }
+      await vincular(medioId);
+    };
+
+    raiz.querySelector('#esc-btn-criar').onclick = async () => {
+      const input = raiz.querySelector('#esc-novo-nome');
+      const nome = input.value.trim();
+      if (!nome) {
+        toast('Informe o nome do médium.', 'warn');
+        return;
+      }
+      try {
+        let m = elegiveis.find((x) => x.nome.toLowerCase() === nome.toLowerCase());
+        if (!m) {
+          m = await store.criar('mediuns', {
+            nome, telefone: '', email: '', observacao: '',
+            funcao: restrito ? 'Ajanã' : '', ativo: 1,
+          });
+        }
+        await vincular(m.id);
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    };
+
+    raiz.querySelector('#esc-btn-leito').onclick = async () => {
+      const ref = horarios[0];
+      try {
+        store.salvarSnapshotUndo(`Marcar LEITO em ${trabalho?.nome || 'Trabalho'}`);
+        await store.criar('escala', {
+          medio_id: 0, trabalho_id: trabalhoId, data: dataISO,
+          horario_id: ref?.id ?? 0, presente: 0, observacao: LEITO,
+        });
+        toast('LEITO marcado.');
         fechar();
         desenharMensal();
       } catch (err) {
