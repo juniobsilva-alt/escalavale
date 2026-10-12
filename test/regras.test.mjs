@@ -17,6 +17,8 @@ import {
   mediumDisponivelNaData,
   haConflitoHorario,
   diasDeSessaoDoMes,
+  celulaMensal,
+  slotsDaData,
   LEITO,
 } from '../js/store.js';
 
@@ -269,4 +271,123 @@ test('8. store.temEscopo — permissões por papel e escopos configurados', asyn
   assert.equal(store.temEscopo('dirigentes'), true);
   assert.equal(store.temEscopo('ajanas'), true);
 });
+
+test('9. preencherDadosOficiaisAjanas — preenchimento fiel da imagem oficial', async (t) => {
+  store.resetar();
+  store.modo = 'local';
+  store.contextoAtual = 'ajanas';
+
+  const res = await store.preencherDadosOficiaisAjanas();
+  assert.equal(res.mediuns, 21, 'Devem ser cadastrados 21 médiuns oficiais');
+  assert.equal(res.escalas, 26, 'Devem ser cadastradas 26 linhas de datas');
+
+  // Verifica se todos os médiuns têm a função Ajanã
+  const mediunsAjanas = store.db.mediuns.filter((m) => m.funcao === 'Ajanã');
+  assert.equal(mediunsAjanas.length >= 21, true, 'Todos os médiuns devem ter função Ajanã');
+
+  // Verifica eventos especiais
+  assert.equal(store.eventoDoDia('2026-09-13', 'ajanas'), 'CONSAGRAÇÃO DE FALANGES MISSIONÁRIAS');
+  assert.equal(store.eventoDoDia('2026-10-11', 'ajanas'), 'CONSAGRAÇÃO DE ADJUNTO E POVO');
+
+  // Verifica trabalhos padrão criados
+  const trabs = store.trabalhosAtivos();
+  const nomesTrabs = trabs.map((t) => t.nome.toLowerCase());
+  assert.equal(nomesTrabs.includes('imunização'), true);
+  assert.equal(nomesTrabs.includes('cura'), true);
+  assert.equal(nomesTrabs.includes('defumação'), true);
+
+  // Imunização só deve ter horário no sábado (dia 6)
+  const tImun = trabs.find((t) => t.nome.toLowerCase() === 'imunização');
+  const horImun = store.db.horarios.filter((h) => h.trabalho_id === tImun.id);
+  assert.equal(horImun.length, 1, 'Imunização deve ter apenas 1 dia de horário');
+  assert.equal(horImun[0].dia_semana, 6, 'Imunização deve ser apenas aos sábados');
+});
+
+test('10. dadosRodapeOficial e eventoDoDia — personalização do rodapé oficial', async (t) => {
+  store.resetar();
+  store.modo = 'local';
+  store.contextoAtual = 'ajanas';
+
+  const padrao = store.dadosRodapeOficial('2026-09');
+  assert.equal(padrao.autor, 'Tia Neiva/ Humarran');
+  assert.equal(padrao.leito[0].data, '02/set');
+  assert.equal(padrao.leito[0].resp, 'Claudio/Fabiana');
+  assert.equal(padrao.assinaturas.esquerda.mestre, 'MESTRE SIDNEY');
+  assert.equal(padrao.assinaturas.direita.mestre, 'MESTRE JURANDIR');
+
+  // Customização
+  await store.salvarDadosRodapeOficial('2026-09', {
+    ...padrao,
+    chamada: 'Nova chamada de teste',
+  });
+  const custom = store.dadosRodapeOficial('2026-09');
+  assert.equal(custom.chamada, 'Nova chamada de teste');
+
+  // Evento do dia
+  await store.salvarEventoDoDia('2026-09-20', 'REUNIÃO GERAL', 'ajanas');
+  assert.equal(store.eventoDoDia('2026-09-20', 'ajanas'), 'REUNIÃO GERAL');
+  await store.salvarEventoDoDia('2026-09-20', '', 'ajanas');
+  assert.equal(store.eventoDoDia('2026-09-20', 'ajanas'), '');
+});
+
+test('11. trabalho fixo na 3ª posição (ex.: Adalberto em Presidente no 2º Sábado) fica na 3ª posição da grade', async (t) => {
+  store.resetar();
+  store.modo = 'local';
+  store.contextoAtual = 'dirigentes';
+  await store.criarGradeModelo();
+
+  // Configura o trabalho Presidente com 3 vagas
+  const trabPresidente = store.db.trabalhos.find((x) => x.nome === 'Presidente');
+  assert.ok(trabPresidente, 'Trabalho Presidente deve existir');
+  trabPresidente.qtd_mediuns = 3;
+
+  // Garante 3 médiuns Doutrinadores, incluindo Adalberto
+  store.db.mediuns = [
+    { id: 1, nome: 'Carlos', funcao: 'Doutrinador', ativo: 1 },
+    { id: 2, nome: 'Roberto', funcao: 'Doutrinador', ativo: 1 },
+    { id: 3, nome: 'Adalberto', funcao: 'Doutrinador', ativo: 1 },
+  ];
+
+  // Regra fixa: Adalberto como Presidente no 2º Sábado (dia_semana = 6, ocorrencia = 2) na Posição 3
+  store.db.disponibilidade = [
+    {
+      id: 1,
+      medio_id: 3,
+      trabalho_id: trabPresidente.id,
+      dia_semana: 6,
+      ocorrencia: 2,
+      posicao: 3,
+      ativo: 1,
+      contexto: 'dirigentes',
+    },
+  ];
+
+  // Em Outubro de 2026, os sábados são: 03/10 (1º) e 10/10 (2º)
+  const segundoSabado = '2026-10-10';
+
+  // Caso A: Distribuição automática do mês
+  await store.distribuirAutomaticamente('2026-10', { modo: 'tudo' });
+
+  const celDist = celulaMensal(segundoSabado, trabPresidente.id, 'dirigentes');
+  assert.equal(celDist.nomes.length, 3, 'Deve ter 3 médiuns escalados em Presidente no 2º sábado');
+  assert.equal(celDist.nomes[2], 'Adalberto', `Adalberto deve estar na 3ª posição (índice 2), mas a célula teve: ${celDist.nomes.join(', ')}`);
+
+  // Verifica também a visão diária (slotsDaData)
+  const slotPresidente = slotsDaData(segundoSabado, 'dirigentes').find((s) => s.trabalho_id === trabPresidente.id);
+  assert.ok(slotPresidente);
+  assert.equal(slotPresidente.todos_nomes[2], 'Adalberto', 'Na visão diária Adalberto também deve estar na 3ª posição');
+
+  // Caso B: Mesmo que Adalberto tenha sido inserido no banco antes dos demais (id menor),
+  // celulaMensal deve continuar posicionando Adalberto na 3ª posição (índice 2)
+  const horarioSab = store.horariosDoTrabalhoNoDia(trabPresidente.id, 6)[0];
+  store.db.escala = [
+    { id: 10, medio_id: 3, trabalho_id: trabPresidente.id, data: segundoSabado, horario_id: horarioSab.id, presente: 0, observacao: '', contexto: 'dirigentes' }, // Adalberto (id menor)
+    { id: 11, medio_id: 1, trabalho_id: trabPresidente.id, data: segundoSabado, horario_id: horarioSab.id, presente: 0, observacao: '', contexto: 'dirigentes' }, // Carlos
+    { id: 12, medio_id: 2, trabalho_id: trabPresidente.id, data: segundoSabado, horario_id: horarioSab.id, presente: 0, observacao: '', contexto: 'dirigentes' }, // Roberto
+  ];
+
+  const celExistente = celulaMensal(segundoSabado, trabPresidente.id, 'dirigentes');
+  assert.deepEqual(celExistente.nomes, ['Carlos', 'Roberto', 'Adalberto'], 'Adalberto deve ficar na 3ª posição mesmo tendo o menor id no banco');
+});
+
 

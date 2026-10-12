@@ -532,3 +532,367 @@ td.celula-destaque {
   width: auto;
   flex-shrink: 0;
 }
+
+/* ==========================================================================
+   Grade Oficial da Escala de Ajanãs (Layout Fiel ao Documento Impresso)
+   ========================================================================== */
+
+.folha-oficial-ajanas {
+  background: #ffffff;
+  color: #000000;
+  font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+  margin: 0 auto 30px auto;
+  max-width: 760px;
+  width: 100%;
+  border: 2px solid #000000;
+  box-sizing: border-box;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+}
+
+/* 1. Cabeçalho */
+.oficial-cabecalho {
+  padding: 8px 12px 4px 12px;
+  text-align: center;
+}
+.oficial-titulo-principal {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  margin: 0;
+  line-height: 1.2;
+  color: #000000;
+}
+.oficial-sublinha {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.88rem;
+  font-weight: 700;
+  margin-top: 4px;
+  padding: 0 2px;
+  color: #000000;
+}
+
+/* 2. Faixa de aviso ao comandante */
+.oficial-aviso-comandante {
+  border-top: 1.5px solid #000000;
+  border-bottom: 1.5px solid #000000;
+  padding: 2.5px 4px;
+  font-size: 0.58rem;
+  font-weight: 800;
+  text-align: center;
+  letter-spacing: 0.015em;
+  line-height: 1.2;
+  color: #000000;
+}
+
+/* 3. Tabela Principal */
+.tabela-ajanas-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+table.tabela-ajanas-oficial {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  table-layout: fixed;
+  color: #000000;
+  margin: 0;
+}
+table.tabela-ajanas-oficial th,
+table.tabela-ajanas-oficial td {
+  border: 1px solid #000000;
+  padding: 2px 3px;
+  height: 22px;
+  box-sizing: border-box;
+  vertical-align: middle;
+  line-height: 1.15;
+}
+table.tabela-ajanas-oficial thead th {
+  background: #ffffff;
+  color: #000000;
+  font-weight: 700;
+  text-align: center;
+  font-size: 0.82rem;
+  padding: 3px 2px;
+}
+table.tabela-ajanas-oficial thead th.th-dia {
+  width: 16%;
+}
+table.tabela-ajanas-oficial thead th.th-imun {
+  width: 16%;
+}
+table.tabela-ajanas-oficial thead th.th-cura {
+  width: 17%;
+}
+table.tabela-ajanas-oficial thead th.th-def {
+  width: 17%;
+}
+table.tabela-ajanas-oficial thead th.th-randy {
+  width: 34%;
+  letter-spacing: 0.35em;
+  padding-left: 0.55em;
+}
+
+/* Faixa verde de destaque */
+table.tabela-ajanas-oficial tr.tr-verde td {
+  background-color: #9bbb59 !important;
+  height: 13px !important;
+  min-height: 13px;
+  padding: 0 !important;
+  border: 1px solid #000000 !important;
+}
+
+/* Colunas e Células */
+table.tabela-ajanas-oficial td.col-dia {
+  font-weight: 700;
+  text-align: left;
+  padding-left: 6px;
+  white-space: nowrap;
+}
+table.tabela-ajanas-oficial td.col-conteudo {
+  text-align: center;
+  cursor: pointer;
+  background: #ffffff;
+  transition: background-color 0.1s ease;
+}
+table.tabela-ajanas-oficial td.col-conteudo:hover {
+  background-color: #f1f5f9;
+}
+table.tabela-ajanas-oficial td.fora-grade {
+  background-color: #ffffff;
+  cursor: pointer;
+}
+table.tabela-ajanas-oficial td.fora-grade:hover {
+  background-color: #f1f5f9;
+}
+table.tabela-ajanas-oficial td.celula-consagracao {
+  background-color: #ffffff;
+  color: #000000;
+  font-weight: 700;
+  text-align: center;
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+table.tabela-ajanas-oficial td.celula-consagracao:hover {
+  background-color: #f1f5f9;
+}
+table.tabela-ajanas-oficial td.celula-leito-randy {
+  text-align: center;
+  cursor: pointer;
+}
+.nome-oficial {
+  font-size: 0.78rem;
+  line-height: 1.15;
+  color: #000000;
+  display: inline-block;
+  cursor: pointer;
+}
+
+/* 4. Frase Doutrinária */
+.oficial-frase-doutrinaria {
+  background-color: #fde9d9;
+  border-top: 1px solid #000000;
+  border-bottom: 1px solid #000000;
+  padding: 4px 10px;
+  font-size: 0.69rem;
+  text-align: center;
+  line-height: 1.25;
+  color: #000000;
+}
+.oficial-frase-doutrinaria .autor-frase {
+  color: #1f497d;
+  font-weight: 700;
+}
+
+/* 5. Tabela do Leito */
+table.tabela-oficial-leito {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+  table-layout: fixed;
+  color: #000000;
+}
+table.tabela-oficial-leito td {
+  border: 1px solid #000000;
+  border-top: none;
+  padding: 2.5px 4px;
+  text-align: center;
+  height: 22px;
+  vertical-align: middle;
+}
+table.tabela-oficial-leito td.col-leito-rotulo {
+  width: 16%;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+table.tabela-oficial-leito td.col-leito-data {
+  width: 16%;
+}
+table.tabela-oficial-leito td.col-leito-resp {
+  width: 26%;
+  font-weight: 500;
+}
+
+/* 6. Estrela Candente */
+.oficial-bloco-candente {
+  border-bottom: 1px solid #000000;
+}
+.oficial-candente-topo {
+  font-weight: 800;
+  font-size: 0.74rem;
+  padding: 2.5px 6px;
+  text-align: left;
+  border-bottom: 1px solid #000000;
+  color: #000000;
+}
+table.tabela-oficial-candente {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.68rem;
+  table-layout: fixed;
+  color: #000000;
+}
+table.tabela-oficial-candente td {
+  border: 1px solid #000000;
+  border-top: none;
+  padding: 2px 4px;
+  vertical-align: top;
+  height: 38px;
+  text-align: left;
+  line-height: 1.15;
+}
+table.tabela-oficial-candente td strong {
+  display: block;
+  font-size: 0.70rem;
+  margin-bottom: 1px;
+}
+.oficial-candente-legenda {
+  border-top: 1px solid #000000;
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2.5px 6px;
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  color: #000000;
+}
+
+/* 7. Faixa de Chamada */
+.oficial-faixa-chamada {
+  border-bottom: 1px solid #000000;
+  padding: 3px 6px;
+  font-size: 0.66rem;
+  text-align: left;
+  font-weight: 500;
+  color: #000000;
+}
+
+/* 8. Bloco de Assinaturas */
+.oficial-bloco-assinaturas {
+  display: flex;
+  width: 100%;
+}
+.oficial-assinatura-col {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 12px;
+  border-right: 1px solid #000000;
+  box-sizing: border-box;
+}
+.oficial-assinatura-col:last-child {
+  border-right: none;
+}
+.oficial-mestre-dados {
+  font-size: 0.70rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #000000;
+}
+.oficial-assinatura-img {
+  height: 30px;
+  width: auto;
+  max-width: 110px;
+  object-fit: contain;
+}
+
+/* Painel de Configuração do Rodapé Oficial */
+.painel-rodape-oficial {
+  margin-top: 16px;
+}
+.grid-campos-rodape {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+@media print {
+  .folha-oficial-ajanas {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 2px solid #000000 !important;
+    box-shadow: none !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+  table.tabela-ajanas-oficial th,
+  table.tabela-ajanas-oficial td {
+    border: 1px solid #000000 !important;
+    height: 18.5px !important;
+    padding: 1px 2.5px !important;
+    font-size: 0.70rem !important;
+  }
+  table.tabela-ajanas-oficial tr.tr-verde td {
+    background-color: #9bbb59 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    height: 11px !important;
+  }
+  table.tabela-ajanas-oficial td.fora-grade,
+  table.tabela-ajanas-oficial td.celula-consagracao {
+    background-color: #ffffff !important;
+  }
+  .oficial-frase-doutrinaria {
+    background-color: #fde9d9 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    font-size: 0.63rem !important;
+    padding: 2.5px 6px !important;
+  }
+  .oficial-frase-doutrinaria .autor-frase {
+    color: #1f497d !important;
+  }
+  table.tabela-oficial-leito td {
+    border: 1px solid #000000 !important;
+    height: 17.5px !important;
+    padding: 1px 3px !important;
+    font-size: 0.68rem !important;
+  }
+  table.tabela-oficial-candente td {
+    border: 1px solid #000000 !important;
+    height: 32px !important;
+    padding: 1.5px 3px !important;
+    font-size: 0.64rem !important;
+  }
+  .oficial-candente-legenda,
+  .oficial-faixa-chamada {
+    font-size: 0.61rem !important;
+    padding: 2px 4px !important;
+  }
+  .oficial-mestre-dados {
+    font-size: 0.64rem !important;
+  }
+  .oficial-assinatura-img {
+    height: 26px !important;
+  }
+}
+

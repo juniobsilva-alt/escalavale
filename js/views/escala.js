@@ -40,7 +40,8 @@ function linkWhatsAppIndividual(m) {
 
 export function renderEscala(el, dataInicial, gradeKey = null) {
   const grade = gradeKey ? GRADES[gradeKey] : null;
-  window.__orientacaoImpressao = gradeKey === 'aj-grade' ? 'portrait' : 'landscape';
+  const ehOficialAjanas = () => (gradeKey === 'aj-grade') || (store.contextoAtual === 'ajanas' && (!gradeKey || gradeKey === 'aj-grade'));
+  window.__orientacaoImpressao = ehOficialAjanas() ? 'portrait' : 'landscape';
   let aba = 'mensal';
   let dataISO = dataInicial || hojeISO();
   let mes = dataISO.slice(0, 7);
@@ -262,6 +263,561 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
     });
   }
 
+  // ============================ FOLHA OFICIAL AJANÃS ============================
+  function formatarTituloPeriodoOficial(mms) {
+    if (!mms || !mms.length) return '';
+    const mesesNomes = mms.map((mm) => {
+      const [, n] = mm.split('-').map(Number);
+      return MESES[n - 1].toUpperCase();
+    });
+    const anos = [...new Set(mms.map((mm) => mm.split('-')[0]))];
+    if (mesesNomes.length === 2) {
+      return `${mesesNomes[0]} E ${mesesNomes[1]} DE ${anos.join('/')}`;
+    }
+    return `${mesesNomes.join(' E ')} DE ${anos.join('/')}`;
+  }
+
+  function htmlFolhaOficialAjanas({ mms, dias, trabs, mediumDestacadoId }) {
+    const dadosRodape = store.dadosRodapeOficial(mes);
+    const rotuloPeriodoOficial = formatarTituloPeriodoOficial(mms);
+
+    const trabImun = trabs.find((t) => t.nome.toLowerCase().includes('imuniz'));
+    const trabCura = trabs.find((t) => t.nome.toLowerCase().includes('cura'));
+    const trabDef = trabs.find((t) => t.nome.toLowerCase().includes('defuma'));
+    const trabR1 = trabs.find((t) => t.nome.toLowerCase() === 'randy 1') || trabs.find((t) => t.nome.toLowerCase().includes('randy'));
+    const trabR2 = trabs.find((t) => t.nome.toLowerCase() === 'randy 2');
+
+    function renderCelulaConteudo(c, dataIso, trabId, itemIdx = null) {
+      if (!c || !c.itens || !c.itens.length) return '';
+      const mediuns = c.itens.filter((e) => e.medio_id > 0);
+      if (!mediuns.length) {
+        if (c.temLeito) {
+          const obs = c.itens.find((e) => e.medio_id === 0)?.observacao || 'LEITO';
+          return `<span class="nome nome-oficial leito" style="color:#b91c1c;font-weight:700">${escapar(obs)}</span>`;
+        }
+        return '';
+      }
+      const lista = (itemIdx !== null && mediuns.length > 1) ? [mediuns[itemIdx]] : mediuns;
+      return lista.filter(Boolean).map((item) => {
+        const mid = item.medio_id;
+        const n = store.nomeMedium(mid);
+        const ehAlvo = mediumDestacadoId && mid === mediumDestacadoId;
+        return `<span class="nome nome-oficial ${ehAlvo ? 'destaque-medium' : ''}" data-escala-id="${item.id}" data-medio-id="${mid}" role="button" tabindex="0" title="Clique para trocar ou substituir ${escapar(n)}">${escapar(n)}</span>`;
+      }).join('<br>');
+    }
+
+    let linhasTabelaHtml = '';
+    for (const d of dias) {
+      const abrevMes = ABREV_MES[Number(d.iso.slice(5, 7)) - 1];
+      const mesCapital = abrevMes[0].toUpperCase() + abrevMes.slice(1);
+      const diaSem = DIAS_CURTO[d.dow];
+      const diaNum = String(d.dia).padStart(2, '0');
+      const diaRotulo = `${diaSem} ${diaNum}/${mesCapital}`;
+
+      const evento = store.eventoDoDia(d.iso, store.contextoAtual);
+      if (evento) {
+        linhasTabelaHtml += `
+          <tr class="linha-consagracao" data-dia="${d.iso}">
+            <td class="col-dia"><strong>${diaRotulo}</strong></td>
+            <td class="celula-consagracao" colspan="5" data-dia="${d.iso}" title="Clique para editar evento ou escala">${escapar(evento)}</td>
+          </tr>`;
+        continue;
+      }
+
+      // Imunização (apenas sábado no templo; qua/dom são fora de grade / cinza)
+      const semImun = !trabImun || store.horariosDoTrabalhoNoDia(trabImun.id, d.dow).length === 0;
+      const cImun = trabImun ? celulaMensal(d.iso, trabImun.id) : null;
+      const imunHtml = renderCelulaConteudo(cImun, d.iso, trabImun?.id);
+
+      // Cura
+      const cCura = trabCura ? celulaMensal(d.iso, trabCura.id) : null;
+      const curaHtml = renderCelulaConteudo(cCura, d.iso, trabCura?.id);
+
+      // Defumação
+      const cDef = trabDef ? celulaMensal(d.iso, trabDef.id) : null;
+      const defHtml = renderCelulaConteudo(cDef, d.iso, trabDef?.id);
+
+      // Randy
+      const cR1 = trabR1 ? celulaMensal(d.iso, trabR1.id) : null;
+      const cR2 = trabR2 ? celulaMensal(d.iso, trabR2.id) : null;
+      const leitoItem = cR1?.itens.find((e) => e.medio_id === 0) || cR2?.itens.find((e) => e.medio_id === 0);
+      const ehLeitoRandy = Boolean(leitoItem || cR1?.temLeito || cR2?.temLeito);
+
+      let randyColsHtml = '';
+      if (ehLeitoRandy) {
+        const textoLeito = leitoItem?.observacao?.trim() || 'Leito';
+        randyColsHtml = `
+          <td class="col-conteudo celula-leito-randy" colspan="2" data-dia="${d.iso}" data-trab="${trabR1?.id || ''}" role="button" tabindex="0">
+            <span class="nome nome-oficial leito-randy" style="font-weight:700;color:#b91c1c">${escapar(textoLeito)}</span>
+          </td>`;
+      } else {
+        const r1Html = renderCelulaConteudo(cR1, d.iso, trabR1?.id, 0);
+        const r2Html = trabR2 ? renderCelulaConteudo(cR2, d.iso, trabR2.id) : renderCelulaConteudo(cR1, d.iso, trabR1?.id, 1);
+        randyColsHtml = `
+          <td class="col-conteudo" data-dia="${d.iso}" data-trab="${trabR1?.id || ''}" role="button" tabindex="0">${r1Html}</td>
+          <td class="col-conteudo" data-dia="${d.iso}" data-trab="${trabR2?.id || trabR1?.id || ''}" role="button" tabindex="0">${r2Html}</td>`;
+      }
+
+      linhasTabelaHtml += `
+        <tr>
+          <td class="col-dia"><strong>${diaRotulo}</strong></td>
+          <td class="col-conteudo" data-dia="${d.iso}" data-trab="${trabImun?.id || ''}" role="button" tabindex="0">${imunHtml}</td>
+          <td class="col-conteudo" data-dia="${d.iso}" data-trab="${trabCura?.id || ''}" role="button" tabindex="0">${curaHtml}</td>
+          <td class="col-conteudo" data-dia="${d.iso}" data-trab="${trabDef?.id || ''}" role="button" tabindex="0">${defHtml}</td>
+          ${randyColsHtml}
+        </tr>`;
+    }
+
+    return `
+      <div class="folha-oficial-ajanas" id="folha-oficial-ajanas">
+        <!-- 1. Cabeçalho -->
+        <div class="oficial-cabecalho">
+          <div class="oficial-titulo-principal">TARAJO DO AMANHECER</div>
+          <div class="oficial-sublinha">
+            <span>ESCALA DOS AJANÃS</span>
+            <span>${rotuloPeriodoOficial}</span>
+          </div>
+        </div>
+
+        <!-- 2. Aviso do Comandante -->
+        <div class="oficial-aviso-comandante">
+          APRESENTE-SE AO SEU COMANDANTE, NO DIA ESCALADO E CASO NÃO POSSA COMPARECER, SUBSTITUA ANTECIPADAMENTE!
+        </div>
+
+        <!-- 3. Tabela Principal -->
+        <table class="tabela-ajanas-oficial">
+          <thead>
+            <tr>
+              <th class="col-dia">Dia</th>
+              <th class="col-conteudo">Imunização</th>
+              <th class="col-conteudo">Cura</th>
+              <th class="col-conteudo">Defumação</th>
+              <th class="col-conteudo" colspan="2" style="letter-spacing:0.35em">R a n d y</th>
+            </tr>
+            <tr class="tr-verde"><td colspan="6"></td></tr>
+          </thead>
+          <tbody>
+            ${linhasTabelaHtml}
+          </tbody>
+        </table>
+
+        <!-- 4. Frase Doutrinária -->
+        <div class="oficial-frase-doutrinaria">
+          <div class="frase-texto">${escapar(dadosRodape.frase)}</div>
+          <div class="autor-frase">${escapar(dadosRodape.autor)}</div>
+        </div>
+
+        <!-- 5. Tabela do Leito -->
+        <table class="tabela-oficial-leito">
+          <tbody>
+            <tr>
+              <td class="col-leito-rotulo"><strong>LEITO</strong></td>
+              <td class="col-leito-data">${escapar(dadosRodape.leito?.[0]?.data || '')}</td>
+              <td class="col-leito-resp">${escapar(dadosRodape.leito?.[0]?.resp || '')}</td>
+              <td class="col-leito-data">${escapar(dadosRodape.leito?.[1]?.data || '')}</td>
+              <td class="col-leito-resp">${escapar(dadosRodape.leito?.[1]?.resp || '')}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- 6. Bloco Estrela Candente -->
+        <div class="oficial-bloco-candente">
+          <div class="oficial-candente-topo">ESTRELA CANDENTE</div>
+          <table class="tabela-oficial-candente">
+            <tbody>
+              ${dadosRodape.candente.map((linha) => `
+                <tr>
+                  ${linha.map((col) => `
+                    <td>
+                      <strong>${escapar(col.data || '')}</strong>
+                      <div>${col.mestre ? `${col.tipo ? col.tipo + ' - ' : ''}${escapar(col.mestre)}` : '&nbsp;'}</div>
+                    </td>
+                  `).join('')}
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div class="oficial-candente-legenda">
+            <span>L: Regente Lua</span>
+            <span>S: Regente Sublimação</span>
+          </div>
+        </div>
+
+        <!-- 7. Faixa de Chamada -->
+        <div class="oficial-faixa-chamada">
+          ${escapar(dadosRodape.chamada || '')}
+        </div>
+
+        <!-- 8. Bloco de Assinaturas -->
+        <div class="oficial-bloco-assinaturas">
+          <div class="oficial-assinatura-col">
+            <div class="oficial-mestre-dados">
+              <div>${escapar(dadosRodape.assinaturas?.esquerda?.titulo || 'ADJ.APARÃ K.108')}</div>
+              <div>${escapar(dadosRodape.assinaturas?.esquerda?.mestre || 'MESTRE SIDNEY')}</div>
+            </div>
+            <img class="oficial-assinatura-img" src="${dadosRodape.assinaturas?.esquerda?.img || 'img/assinatura_sidney.png'}" alt="Assinatura Mestre Sidney" />
+          </div>
+          <div class="oficial-assinatura-col">
+            <div class="oficial-mestre-dados">
+              <div>${escapar(dadosRodape.assinaturas?.direita?.titulo || 'ADJ TARAJO K 108')}</div>
+              <div>${escapar(dadosRodape.assinaturas?.direita?.mestre || 'MESTRE JURANDIR')}</div>
+            </div>
+            <img class="oficial-assinatura-img" src="${dadosRodape.assinaturas?.direita?.img || 'img/assinatura_jurandir.png'}" alt="Assinatura Mestre Jurandir" />
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function htmlPainelRodapeOficial(dados) {
+    return `
+      <div class="card no-print painel-rodape-oficial" id="painel-rodape-oficial">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+          <h3 style="margin:0">⚙️ Informações Complementares da Folha Oficial</h3>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary btn-sm" id="btn-salvar-rodape-oficial">Salvar dados do rodapé</button>
+            <button class="btn btn-ghost btn-sm" id="btn-restaurar-rodape-oficial" title="Restaurar valores de referência da imagem">Restaurar padrão</button>
+          </div>
+        </div>
+        <p class="muted" style="margin-top:0">Ajuste os dados de Leito, Frase, Estrela Candente e Chamada impressos no rodapé da folha oficial deste bimestre.</p>
+        
+        <div class="grid-campos-rodape">
+          <div class="field" style="grid-column: 1 / -1">
+            <label for="f-oficial-frase">Frase Doutrinária</label>
+            <textarea id="f-oficial-frase" rows="2">${escapar(dados.frase)}</textarea>
+          </div>
+          <div class="field">
+            <label for="f-oficial-autor">Autor da Frase</label>
+            <input id="f-oficial-autor" value="${escapar(dados.autor)}" />
+          </div>
+          <div class="field">
+            <label for="f-oficial-chamada">Texto da Faixa de Chamada</label>
+            <input id="f-oficial-chamada" value="${escapar(dados.chamada)}" />
+          </div>
+          <div class="field">
+            <label for="f-leito-data-0">Leito 1 - Data</label>
+            <input id="f-leito-data-0" value="${escapar(dados.leito?.[0]?.data || '')}" placeholder="02/set" />
+          </div>
+          <div class="field">
+            <label for="f-leito-resp-0">Leito 1 - Responsáveis</label>
+            <input id="f-leito-resp-0" value="${escapar(dados.leito?.[0]?.resp || '')}" placeholder="Claudio/Fabiana" />
+          </div>
+          <div class="field">
+            <label for="f-leito-data-1">Leito 2 - Data</label>
+            <input id="f-leito-data-1" value="${escapar(dados.leito?.[1]?.data || '')}" placeholder="07/out" />
+          </div>
+          <div class="field">
+            <label for="f-leito-resp-1">Leito 2 - Responsáveis</label>
+            <input id="f-leito-resp-1" value="${escapar(dados.leito?.[1]?.resp || '')}" placeholder="Genivaldo/Teresinha" />
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  async function exportarImagemOficialAjanas({ mms, dias, trabs }) {
+    if (document.fonts) {
+      try { await document.fonts.ready; } catch {}
+    }
+
+    const canvas = document.createElement('canvas');
+    // Alta resolução: 2x da proporção 660x840 = 1320x1680
+    canvas.width = 1320;
+    canvas.height = 1680;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(2, 2);
+
+    // Fundo branco
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, 660, 840);
+
+    // Moldura externa
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(14, 14, 632, 812);
+
+    // Carrega imagens de assinatura
+    const [imgSidney, imgJurandir] = await Promise.all([
+      new Promise((res) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => res(img);
+        img.onerror = () => res(null);
+        img.src = 'img/assinatura_sidney.png';
+      }),
+      new Promise((res) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => res(img);
+        img.onerror = () => res(null);
+        img.src = 'img/assinatura_jurandir.png';
+      }),
+    ]);
+
+    const dadosRodape = store.dadosRodapeOficial(mes);
+
+    // 1. Cabeçalho
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 15px Arial, Helvetica, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('TARAJO DO AMANHECER', 330, 27);
+
+    // Linha y = 39
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(14, 39); ctx.lineTo(646, 39); ctx.stroke();
+
+    // Sublinha
+    ctx.font = 'bold 10px Arial, Helvetica, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('ESCALA DOS AJANÃS', 20, 48.5);
+    ctx.textAlign = 'right';
+    ctx.fillText(formatarTituloPeriodoOficial(mms), 640, 48.5);
+
+    // Linha y = 58
+    ctx.beginPath(); ctx.moveTo(14, 58); ctx.lineTo(646, 58); ctx.stroke();
+
+    // 2. Aviso do Comandante
+    ctx.font = 'bold 8.2px Arial, Helvetica, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('APRESENTE-SE AO SEU COMANDANTE, NO DIA ESCALADO E CASO NÃO POSSA COMPARECER, SUBSTITUA ANTECIPADAMENTE!', 330, 65.5);
+
+    // Linha y = 73
+    ctx.beginPath(); ctx.moveTo(14, 73); ctx.lineTo(646, 73); ctx.stroke();
+
+    // 3. Cabeçalho da Tabela Principal
+    ctx.font = 'bold 10.5px Arial, Helvetica, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Dia', 69, 82.5);
+    ctx.fillText('Imunização', 189, 82.5);
+    ctx.fillText('Cura', 319, 82.5);
+    ctx.fillText('Defumação', 449, 82.5);
+    ctx.fillText('R   a   n   d   y', 580, 82.5);
+
+    // Linhas verticais do cabeçalho da tabela
+    ctx.beginPath();
+    ctx.moveTo(124, 73); ctx.lineTo(124, 92);
+    ctx.moveTo(254, 73); ctx.lineTo(254, 92);
+    ctx.moveTo(384, 73); ctx.lineTo(384, 92);
+    ctx.moveTo(514, 73); ctx.lineTo(514, 92);
+    ctx.stroke();
+
+    // Faixa verde
+    ctx.fillStyle = '#9bbb59';
+    ctx.fillRect(14, 92, 632, 9);
+    ctx.beginPath(); ctx.moveTo(14, 101); ctx.lineTo(646, 101); ctx.stroke();
+
+    const trabImun = trabs.find((t) => t.nome.toLowerCase().includes('imuniz'));
+    const trabCura = trabs.find((t) => t.nome.toLowerCase().includes('cura'));
+    const trabDef = trabs.find((t) => t.nome.toLowerCase().includes('defuma'));
+    const trabR1 = trabs.find((t) => t.nome.toLowerCase() === 'randy 1') || trabs.find((t) => t.nome.toLowerCase().includes('randy'));
+    const trabR2 = trabs.find((t) => t.nome.toLowerCase() === 'randy 2');
+
+    const totalLinhas = Math.max(dias.length, 1);
+    const rowH = 481 / totalLinhas;
+
+    // Renderiza cada linha de data
+    for (let r = 0; r < dias.length; r++) {
+      const d = dias[r];
+      const yTop = 101 + r * rowH;
+      const yBot = yTop + rowH;
+      const yMid = yTop + rowH / 2;
+
+      const abrevMes = ABREV_MES[Number(d.iso.slice(5, 7)) - 1];
+      const mesCapital = abrevMes[0].toUpperCase() + abrevMes.slice(1);
+      const diaRotulo = `${DIAS_CURTO[d.dow]} ${String(d.dia).padStart(2, '0')}/${mesCapital}`;
+
+      // Linha horizontal inferior
+      ctx.beginPath(); ctx.moveTo(14, yBot); ctx.lineTo(646, yBot); ctx.stroke();
+      // Divisor da coluna Dia
+      ctx.beginPath(); ctx.moveTo(124, yTop); ctx.lineTo(124, yBot); ctx.stroke();
+
+      // Texto da coluna Dia
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 9.5px Arial, Helvetica, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(diaRotulo, 20, yMid);
+
+      const evento = store.eventoDoDia(d.iso, store.contextoAtual);
+      if (evento) {
+        // Consagração preenchendo as colunas 2 a 6 (fundo limpo/branco)
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 9px Arial, Helvetica, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(evento.toUpperCase(), 385, yMid);
+        continue;
+      }
+
+      // Imunização (sem preenchimento cinza)
+      const cImun = trabImun ? celulaMensal(d.iso, trabImun.id) : null;
+      ctx.beginPath(); ctx.moveTo(254, yTop); ctx.lineTo(254, yBot); ctx.stroke();
+      if (cImun?.nomes?.length) {
+        ctx.fillStyle = '#000000';
+        ctx.font = '9.5px Arial, Helvetica, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(cImun.nomes.join(', '), 189, yMid);
+      }
+
+      // Cura
+      const cCura = trabCura ? celulaMensal(d.iso, trabCura.id) : null;
+      ctx.beginPath(); ctx.moveTo(384, yTop); ctx.lineTo(384, yBot); ctx.stroke();
+      if (cCura?.nomes?.length) {
+        ctx.fillStyle = '#000000';
+        ctx.font = '9.5px Arial, Helvetica, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(cCura.nomes.join(', '), 319, yMid);
+      }
+
+      // Defumação
+      const cDef = trabDef ? celulaMensal(d.iso, trabDef.id) : null;
+      ctx.beginPath(); ctx.moveTo(514, yTop); ctx.lineTo(514, yBot); ctx.stroke();
+      if (cDef?.nomes?.length) {
+        ctx.fillStyle = '#000000';
+        ctx.font = '9.5px Arial, Helvetica, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(cDef.nomes.join(', '), 449, yMid);
+      }
+
+      // Randy
+      const cR1 = trabR1 ? celulaMensal(d.iso, trabR1.id) : null;
+      const cR2 = trabR2 ? celulaMensal(d.iso, trabR2.id) : null;
+      const leitoItem = cR1?.itens.find((e) => e.medio_id === 0) || cR2?.itens.find((e) => e.medio_id === 0);
+      const ehLeitoRandy = Boolean(leitoItem || cR1?.temLeito || cR2?.temLeito);
+
+      if (ehLeitoRandy) {
+        const textoLeito = leitoItem?.observacao?.trim() || 'Leito';
+        ctx.fillStyle = '#b91c1c';
+        ctx.font = 'bold 9.5px Arial, Helvetica, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(textoLeito, 580, yMid);
+      } else {
+        ctx.beginPath(); ctx.moveTo(580, yTop); ctx.lineTo(580, yBot); ctx.stroke();
+        const nR1 = cR1?.nomes?.[0] || '';
+        const nR2 = trabR2 ? (cR2?.nomes?.[0] || '') : (cR1?.nomes?.[1] || '');
+        ctx.fillStyle = '#000000';
+        ctx.font = '9.5px Arial, Helvetica, sans-serif';
+        ctx.textAlign = 'center';
+        if (nR1) ctx.fillText(nR1, 547, yMid);
+        if (nR2) ctx.fillText(nR2, 613, yMid);
+      }
+    }
+
+    // 4. Frase Doutrinária
+    ctx.fillStyle = '#fde9d9';
+    ctx.fillRect(14, 582, 632, 36);
+    ctx.beginPath(); ctx.moveTo(14, 618); ctx.lineTo(646, 618); ctx.stroke();
+
+    ctx.fillStyle = '#000000';
+    ctx.font = '8px Arial, Helvetica, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(dadosRodape.frase, 330, 595);
+
+    ctx.fillStyle = '#1f497d';
+    ctx.font = 'bold 8.5px Arial, Helvetica, sans-serif';
+    ctx.fillText(dadosRodape.autor, 330, 609);
+
+    // 5. Linha do Leito
+    ctx.beginPath(); ctx.moveTo(14, 640); ctx.lineTo(646, 640); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(124, 618); ctx.lineTo(124, 640);
+    ctx.moveTo(224, 618); ctx.lineTo(224, 640);
+    ctx.moveTo(384, 618); ctx.lineTo(384, 640);
+    ctx.moveTo(484, 618); ctx.lineTo(484, 640);
+    ctx.stroke();
+
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 9.5px Arial, Helvetica, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('LEITO', 69, 629);
+
+    ctx.font = '9px Arial, Helvetica, sans-serif';
+    ctx.fillText(dadosRodape.leito?.[0]?.data || '', 174, 629);
+    ctx.fillText(dadosRodape.leito?.[0]?.resp || '', 304, 629);
+    ctx.fillText(dadosRodape.leito?.[1]?.data || '', 434, 629);
+    ctx.fillText(dadosRodape.leito?.[1]?.resp || '', 565, 629);
+
+    // 6. Estrela Candente
+    ctx.font = 'bold 9px Arial, Helvetica, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('ESTRELA CANDENTE', 20, 648);
+    ctx.beginPath(); ctx.moveTo(14, 654); ctx.lineTo(646, 654); ctx.stroke();
+
+    const colW = 632 / 6;
+    ctx.beginPath();
+    ctx.moveTo(14, 688); ctx.lineTo(646, 688);
+    ctx.moveTo(14, 722); ctx.lineTo(646, 722);
+    for (let c = 1; c < 6; c++) {
+      const x = 14 + c * colW;
+      ctx.moveTo(x, 654); ctx.lineTo(x, 722);
+    }
+    ctx.stroke();
+
+    ctx.textAlign = 'left';
+    dadosRodape.candente.forEach((linha, lIdx) => {
+      const yLinha = 654 + lIdx * 34;
+      linha.forEach((item, cIdx) => {
+        const xCell = 14 + cIdx * colW + 6;
+        if (item.data) {
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 8.5px Arial, Helvetica, sans-serif';
+          ctx.fillText(item.data, xCell, yLinha + 12);
+          if (item.mestre) {
+            ctx.font = '8px Arial, Helvetica, sans-serif';
+            const rot = item.tipo ? `${item.tipo} - ${item.mestre}` : item.mestre;
+            ctx.fillText(rot, xCell, yLinha + 24);
+          }
+        }
+      });
+    });
+
+    // Legenda Candente
+    ctx.beginPath(); ctx.moveTo(14, 735); ctx.lineTo(646, 735); ctx.stroke();
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 8.2px Arial, Helvetica, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('L: Regente Lua        S: Regente Sublimação', 330, 728.5);
+
+    // 7. Faixa de Chamada
+    ctx.beginPath(); ctx.moveTo(14, 753); ctx.lineTo(646, 753); ctx.stroke();
+    ctx.font = '8px Arial, Helvetica, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(dadosRodape.chamada || '', 20, 744);
+
+    // 8. Assinaturas
+    ctx.beginPath(); ctx.moveTo(330, 753); ctx.lineTo(330, 826); ctx.stroke();
+
+    // Esquerda (Sidney)
+    ctx.font = 'bold 8.5px Arial, Helvetica, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(dadosRodape.assinaturas?.esquerda?.titulo || 'ADJ.APARÃ K.108', 24, 778);
+    ctx.fillText(dadosRodape.assinaturas?.esquerda?.mestre || 'MESTRE SIDNEY', 24, 794);
+    if (imgSidney) {
+      ctx.drawImage(imgSidney, 195, 758, 120, 60);
+    }
+
+    // Direita (Jurandir)
+    ctx.fillText(dadosRodape.assinaturas?.direita?.titulo || 'ADJ TARAJO K 108', 344, 778);
+    ctx.fillText(dadosRodape.assinaturas?.direita?.mestre || 'MESTRE JURANDIR', 344, 794);
+    if (imgJurandir) {
+      ctx.drawImage(imgJurandir, 500, 758, 130, 60);
+    }
+
+    // Traçado final da moldura externa para máxima nitidez
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(14, 14, 632, 812);
+
+    canvas.toBlob((blob) => {
+      if (!blob) { toast('Erro ao gerar imagem.', 'error'); return; }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `escala-ajanas-${mes}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast('Imagem oficial dos Ajanãs salva com sucesso!');
+    }, 'image/png');
+  }
+
   // ============================ GRADE MENSAL ============================
   // ============================ GRADE MENSAL ============================
   function desenharMensal() {
@@ -270,6 +826,9 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
     for (const mm of mms) {
       store.garantirMesCarregado(mm).catch(() => {});
     }
+
+    const ehGradeOficialAjanas = ehOficialAjanas();
+    window.__orientacaoImpressao = ehGradeOficialAjanas ? 'portrait' : 'landscape';
 
     const trabalhos = trabalhosDaGrade();
     const idsGrade = grade ? trabalhos.map((t) => t.id) : null;
@@ -312,6 +871,7 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
         <span id="badge-destaque" class="pill info" style="${mediumDestacadoId ? '' : 'display:none'}">${totalDestaque} escala(s)</span>
         <button class="btn btn-sm only-mobile" id="btn-modo-view">${modoVisualizacao === 'cards' ? '📋 Tabela' : '📱 Cards'}</button>
         <div class="spacer"></div>
+        ${ehGradeOficialAjanas ? `<button class="btn btn-sm" id="btn-preencher-oficial" title="Preencher com os dados da escala oficial da imagem">📋 Carregar dados da imagem</button>` : ''}
         ${store.podeDesfazer() ? `<button class="btn btn-sm btn-ghost" id="btn-desfazer-grade" title="Desfazer última ação">↩ Desfazer</button>` : ''}
         <button class="btn btn-sm" id="btn-limpar-grade">Limpar grade</button>
         <button class="btn btn-sm" id="btn-distribuir">🎲 Distribuir Mediuns</button>
@@ -331,9 +891,9 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
         <p class="muted">O botão <strong>Criar modelo</strong> cadastra os trabalhos e os horários padrão sem duplicar o que já existe.</p>
         ${faltamTrabalhos.length ? `<button class="btn btn-primary btn-sm" id="btn-criar-grade">Criar trabalhos desta grade (${faltamTrabalhos.join(', ')})</button>` : ''}
       </div>` : ''}
-      ${cfg.titulo ? `<h2 class="titulo-grade titulo-tarajo">${cfg.titulo}</h2><h3 class="titulo-grade-sub">ESCALA DOS AJANÃS${grade && gradeKey !== 'aj-grade' ? ' — ' + grade.titulo.toUpperCase() : ''} — ${rotuloPeriodo().toUpperCase()}</h3>` : ''}
-      ${cfg.aviso ? `<p class="aviso-grade">${cfg.aviso}</p>` : ''}
-      ${gradeKey === 'aj-grade' ? '' : `<h2 class="titulo-grade">${ehBimestral() ? 'Escala de trabalho' : 'Escala de trabalho do mês'} de ${rotuloPeriodo()}</h2>`}
+      ${(cfg.titulo && (!ehGradeOficialAjanas || modoVisualizacao === 'cards')) ? `<h2 class="titulo-grade titulo-tarajo">${cfg.titulo}</h2><h3 class="titulo-grade-sub">ESCALA DOS AJANÃS${grade && gradeKey !== 'aj-grade' ? ' — ' + grade.titulo.toUpperCase() : ''} — ${rotuloPeriodo().toUpperCase()}</h3>` : ''}
+      ${(cfg.aviso && (!ehGradeOficialAjanas || modoVisualizacao === 'cards')) ? `<p class="aviso-grade">${cfg.aviso}</p>` : ''}
+      ${(gradeKey === 'aj-grade' || (ehGradeOficialAjanas && modoVisualizacao !== 'cards')) ? '' : `<h2 class="titulo-grade">${ehBimestral() ? 'Escala de trabalho' : 'Escala de trabalho do mês'} de ${rotuloPeriodo()}</h2>`}
       ${trabalhos.length === 0 || dias.length === 0 ? estadoVazio({
         icone: '📅', titulo: 'Grade vazia', descricao: 'Complete os itens acima para gerar a grade.',
         acaoHTML: faltamTrabalhos.length ? `<button class="btn btn-primary btn-sm" id="vazio-criar">Criar trabalhos desta grade</button>` : '',
@@ -370,6 +930,11 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
             </div>
           `).join('')}
         </div>
+      ` : (ehGradeOficialAjanas ? `
+        <div class="table-wrap grade-wrap">
+          ${htmlFolhaOficialAjanas({ mms, dias, trabs: trabalhos, mediumDestacadoId })}
+        </div>
+        ${htmlPainelRodapeOficial(store.dadosRodapeOficial(mes))}
       ` : `
         <div class="table-wrap grade-wrap"><table class="grade">
           <thead><tr><th class="col-dia">DIA</th>${trabalhos.map((t) => `<th>${escapar(t.nome)}</th>`).join('')}</tr></thead>
@@ -399,19 +964,21 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
             </tr>`).join('')}
           </tbody>
         </table></div>
-      `)}
-      <p class="rodape-grade" id="rodape-grade">${mms.map((mm) => escapar(store.notaDoMes(mm))).filter(Boolean).join(' | ')}</p>
-      ${cfg.rodapeFixo ? `<p class="rodape-fixo">${escapar(cfg.rodapeFixo)}</p>` : ''}
-      <div class="card no-print">
-        <h3>Avisos do rodapé</h3>
-        <p class="muted">Ex.: Aramê: 20 &nbsp;|&nbsp; Angical: 15 &nbsp;|&nbsp; Julgamento: NT &nbsp;|&nbsp; Sessão Branca: 22 &nbsp;|&nbsp; Turigano: 14, 21, 28 &nbsp;|&nbsp; Leito Magnético: 03, 24</p>
-        ${mms.map((mm) => {
-          const [a, n] = mm.split('-').map(Number);
-          return `<div class="field"><label for="f-nota-${mm}">Texto do rodapé de ${MESES[n - 1]} de ${a}</label>
-          <textarea id="f-nota-${mm}" rows="2">${escapar(store.notaDoMes(mm))}</textarea></div>`;
-        }).join('')}
-        <button class="btn btn-primary btn-sm" id="btn-nota">Salvar avisos</button>
-      </div>`;
+      `))}
+      ${ehGradeOficialAjanas ? '' : `
+        <p class="rodape-grade" id="rodape-grade">${mms.map((mm) => escapar(store.notaDoMes(mm))).filter(Boolean).join(' | ')}</p>
+        ${cfg.rodapeFixo ? `<p class="rodape-fixo">${escapar(cfg.rodapeFixo)}</p>` : ''}
+        <div class="card no-print">
+          <h3>Avisos do rodapé</h3>
+          <p class="muted">Ex.: Aramê: 20 &nbsp;|&nbsp; Angical: 15 &nbsp;|&nbsp; Julgamento: NT &nbsp;|&nbsp; Sessão Branca: 22 &nbsp;|&nbsp; Turigano: 14, 21, 28 &nbsp;|&nbsp; Leito Magnético: 03, 24</p>
+          ${mms.map((mm) => {
+            const [a, n] = mm.split('-').map(Number);
+            return `<div class="field"><label for="f-nota-${mm}">Texto do rodapé de ${MESES[n - 1]} de ${a}</label>
+            <textarea id="f-nota-${mm}" rows="2">${escapar(store.notaDoMes(mm))}</textarea></div>`;
+          }).join('')}
+          <button class="btn btn-primary btn-sm" id="btn-nota">Salvar avisos</button>
+        </div>
+      `}`;
 
     async function criarTrabalhosDaGrade(btn) {
       const maxOrdem = Math.max(0, ...store.db.trabalhos.map((t) => t.ordem ?? 0));
@@ -510,6 +1077,75 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
       } catch (err) { toast(err.message, 'error'); return; }
       desenharMensal();
     });
+
+    // Ações da folha oficial de Ajanãs
+    area.querySelector('#btn-preencher-oficial')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      if (!confirm('Deseja preencher a grade com a escala oficial e os 21 médiuns igual à imagem de referência (Setembro/Outubro 2026)?')) return;
+      btn.disabled = true;
+      try {
+        const res = await store.preencherDadosOficiaisAjanas();
+        mes = '2026-09';
+        toast(`Dados oficiais carregados com sucesso! (${res.mediuns} médiuns, ${res.escalas} escalas)`);
+      } catch (err) {
+        toast(err.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+      desenharMensal();
+    });
+
+    area.querySelector('#btn-salvar-rodape-oficial')?.addEventListener('click', async () => {
+      try {
+        const dadosAtuais = store.dadosRodapeOficial(mes);
+        const novos = {
+          frase: area.querySelector('#f-oficial-frase')?.value.trim() ?? dadosAtuais.frase,
+          autor: area.querySelector('#f-oficial-autor')?.value.trim() ?? dadosAtuais.autor,
+          chamada: area.querySelector('#f-oficial-chamada')?.value.trim() ?? dadosAtuais.chamada,
+          leito: [
+            {
+              data: area.querySelector('#f-leito-data-0')?.value.trim() ?? dadosAtuais.leito?.[0]?.data ?? '',
+              resp: area.querySelector('#f-leito-resp-0')?.value.trim() ?? dadosAtuais.leito?.[0]?.resp ?? '',
+            },
+            {
+              data: area.querySelector('#f-leito-data-1')?.value.trim() ?? dadosAtuais.leito?.[1]?.data ?? '',
+              resp: area.querySelector('#f-leito-resp-1')?.value.trim() ?? dadosAtuais.leito?.[1]?.resp ?? '',
+            },
+          ],
+          candente: dadosAtuais.candente,
+          assinaturas: dadosAtuais.assinaturas,
+        };
+        await store.salvarDadosRodapeOficial(mes, novos);
+        toast('Rodapé oficial salvo com sucesso!');
+        desenharMensal();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+
+    area.querySelector('#btn-restaurar-rodape-oficial')?.addEventListener('click', async () => {
+      if (!confirm('Restaurar o rodapé padrão da imagem oficial?')) return;
+      try {
+        await store.salvarDadosRodapeOficial(mes, null);
+        toast('Rodapé restaurado ao padrão da imagem.');
+        desenharMensal();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+
+    area.querySelectorAll('.celula-consagracao[data-dia]').forEach((cell) => {
+      cell.onclick = async () => {
+        const dataISO = cell.dataset.dia;
+        const atual = store.eventoDoDia(dataISO, store.contextoAtual) || '';
+        const novo = prompt('Evento / Consagração neste dia (deixe vazio para remover e voltar aos trabalhos):', atual);
+        if (novo !== null) {
+          await store.salvarEventoDoDia(dataISO, novo.trim(), store.contextoAtual);
+          desenharMensal();
+        }
+      };
+    });
+
     area.querySelectorAll('td[data-dia][data-trab], .grade-card-item[data-dia][data-trab]').forEach((cell) => {
       cell.onclick = (e) => {
         const nomeEl = e.target.closest('.nome[data-escala-id]');
@@ -735,6 +1371,10 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
     if (trabs.length === 0 || dias.length === 0) {
       toast('Grade vazia. Nada a exportar.', 'warn');
       return;
+    }
+
+    if (ehOficialAjanas()) {
+      return await exportarImagemOficialAjanas({ mms, dias, trabs });
     }
 
     if (document.fonts) {
@@ -1325,9 +1965,13 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
             </div>
           </div>
 
-          <div class="quick-actions" style="margin-top:16px">
-            <button class="btn btn-primary" id="esc-btn-confirmar">Confirmar</button>
-            <button class="btn btn-sm" id="esc-btn-leito">Marcar LEITO</button>
+          <div class="quick-actions" style="margin-top:16px;flex-wrap:wrap;gap:6px">
+            <button class="btn btn-primary" id="esc-btn-confirmar">Confirmar Médium</button>
+            <button class="btn btn-sm" id="esc-btn-leito">LEITO</button>
+            <button class="btn btn-sm" id="esc-btn-leito-ext">Leito Externo</button>
+            <button class="btn btn-sm" id="esc-btn-ejano">EJANO</button>
+            <button class="btn btn-sm" id="esc-btn-candente">Candente</button>
+            <button class="btn btn-sm btn-ghost" id="esc-btn-consagracao" title="Definir consagração neste dia">✨ Consagração</button>
             <button class="btn btn-ghost" id="esc-btn-cancelar">Cancelar</button>
           </div>
         </div>
@@ -1424,7 +2068,7 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
       }
     };
 
-    raiz.querySelector('#esc-btn-leito').onclick = async () => {
+    async function marcarObservacaoEspecial(obs) {
       let ref = horarios[0];
       if (!ref) {
         const modelo = MODELOS_GRADE[store.contextoAtual] ?? MODELOS_GRADE.dirigentes;
@@ -1437,18 +2081,33 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
         horarios.push(ref);
       }
       try {
-        store.salvarSnapshotUndo(`Marcar LEITO em ${trabalho?.nome || 'Trabalho'}`);
+        store.salvarSnapshotUndo(`Marcar ${obs} em ${trabalho?.nome || 'Trabalho'}`);
         await store.criar('escala', {
           medio_id: 0, trabalho_id: trabalhoId, data: dataISO,
-          horario_id: ref.id, presente: 0, observacao: LEITO,
+          horario_id: ref.id, presente: 0, observacao: obs,
         });
-        toast('LEITO marcado.');
+        toast(`${obs} marcado.`);
         fechar();
         desenharMensal();
       } catch (err) {
         toast(err.message, 'error');
       }
-    };
+    }
+
+    raiz.querySelector('#esc-btn-leito').onclick = () => marcarObservacaoEspecial('Leito');
+    raiz.querySelector('#esc-btn-leito-ext')?.addEventListener('click', () => marcarObservacaoEspecial('Leito Externo'));
+    raiz.querySelector('#esc-btn-ejano')?.addEventListener('click', () => marcarObservacaoEspecial('EJANO'));
+    raiz.querySelector('#esc-btn-candente')?.addEventListener('click', () => marcarObservacaoEspecial('Candente'));
+    raiz.querySelector('#esc-btn-consagracao')?.addEventListener('click', async () => {
+      const atual = store.eventoDoDia(dataISO, store.contextoAtual) || '';
+      const texto = prompt('Nome do evento de consagração no dia:', atual || 'CONSAGRAÇÃO DE ');
+      if (texto !== null && texto.trim()) {
+        await store.salvarEventoDoDia(dataISO, texto.trim(), store.contextoAtual);
+        toast('Consagração registrada.');
+        fechar();
+        desenharMensal();
+      }
+    });
   }
 
   // ---- Modal da célula (vários médiuns + LEITO) ----

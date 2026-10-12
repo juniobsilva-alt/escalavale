@@ -40,7 +40,11 @@ export const MODELOS_GRADE = {
   dirigentes: { trabalhos: TRABALHOS_MODELO, dias: DIAS_SESSAO_MODELO, hora: ['19:00', '21:00'], qtd: {} },
   ajanas: {
     trabalhos: ['Imunização', 'Cura', 'Defumação', 'Randy 1', 'Randy 2'],
-    dias: DIAS_SESSAO_MODELO, hora: ['19:00', '21:00'], qtd: {},
+    dias: DIAS_SESSAO_MODELO,
+    diasPorTrabalho: {
+      'imunização': [6], // No templo, Imunização só ocorre aos sábados
+    },
+    hora: ['19:00', '21:00'], qtd: {},
   },
 };
 
@@ -51,6 +55,38 @@ export const GRADE_CONFIG = {
     titulo: 'TARAJO DO AMANHECER',
     aviso: 'APRESENTE-SE AO SEU COMANDANTE, NO DIA ESCALADO E CASO NÃO POSSA COMPARECER, SUBSTITUA ANTECIPADAMENTE!',
     rodapeFixo: 'A tua consciência pura, tão somente, não te livrará da maldade dos olhos físicos. É caridade, também, dará satisfação do teu comportamento ao teu vizinho, que não conhece a tua consciência.! Tia Neiva / Humarran — ADJ. APARÃ K.108 MESTRE SIDNEY · ADJ TARAJO K 108 MESTRE JURANDIR',
+  },
+};
+
+export const PADRAO_RODAPE_OFICIAL = {
+  frase: 'A tua consciência pura, tão somente, não te livrará da maldade dos olhos físicos. É caridade, também, dará satisfação do teu comportamento ao teu vizinho, que não conhece a tua consciência.!',
+  autor: 'Tia Neiva/ Humarran',
+  leito: [
+    { data: '02/set', resp: 'Claudio/Fabiana' },
+    { data: '07/out', resp: 'Genivaldo/Teresinha' },
+  ],
+  candente: [
+    [
+      { data: '05/set', mestre: 'Vandilson', tipo: 'L' },
+      { data: '12/set', mestre: 'Marcio', tipo: 'S' },
+      { data: '19/set', mestre: 'Julio', tipo: 'L' },
+      { data: '26/set', mestre: 'Marcio', tipo: 'S' },
+      { data: '03/out', mestre: 'Vandilson', tipo: 'L' },
+      { data: '10/out', mestre: 'Danilo', tipo: 'S' },
+    ],
+    [
+      { data: '17/out', mestre: 'Julio', tipo: 'L' },
+      { data: '24/out', mestre: 'Marcio', tipo: 'S' },
+      { data: '31/out', mestre: 'Vandilson', tipo: 'L' },
+      { data: '', mestre: '', tipo: '' },
+      { data: '', mestre: '', tipo: '' },
+      { data: '', mestre: '', tipo: '' },
+    ],
+  ],
+  chamada: 'Chamada para as escalas a partir de 17/10/2026 PARA OS MESES DE NOVEMBRO E DEZEMBRO DE 2026',
+  assinaturas: {
+    esquerda: { titulo: 'ADJ.APARÃ K.108', mestre: 'MESTRE SIDNEY', img: 'img/assinatura_sidney.png' },
+    direita: { titulo: 'ADJ TARAJO K 108', mestre: 'MESTRE JURANDIR', img: 'img/assinatura_jurandir.png' },
   },
 };
 
@@ -134,6 +170,11 @@ function migrar(db) {
         if (gd.trabalhos.some((n) => n.toLowerCase() === nome)) { t.grade = gk; break; }
       }
     }
+  }
+  // No contexto Ajanãs, Imunização só ocorre aos sábados (dow === 6)
+  const trabImun = db.trabalhos.find((t) => (t.contexto ?? 'dirigentes') === 'ajanas' && (t.nome ?? '').toLowerCase() === 'imunização');
+  if (trabImun) {
+    db.horarios = db.horarios.filter((h) => !(h.trabalho_id === trabImun.id && h.dia_semana !== 6));
   }
   for (const e of db.escala) if (e.contexto == null) e.contexto = 'dirigentes';
   for (const d of db.disponibilidade) {
@@ -609,6 +650,197 @@ export const store = {
     this.db.notas_mensais[this.chaveNota(mesChave, ctx)] = texto;
     if (this.modo === 'local') this.salvarLocal();
   },
+  eventoDoDia(dataISO, ctx = this.contextoAtual) {
+    const chave = `evento:${ctx}:${dataISO}`;
+    if (this.db.notas_mensais[chave]) return this.db.notas_mensais[chave];
+    const item = this.db.escala.find((e) => e.data === dataISO && (e.contexto ?? 'dirigentes') === ctx && e.medio_id === 0 && e.observacao && /consagra/i.test(e.observacao));
+    return item?.observacao ?? '';
+  },
+  async salvarEventoDoDia(dataISO, texto, ctx = this.contextoAtual) {
+    const chave = `evento:${ctx}:${dataISO}`;
+    if (!texto) {
+      delete this.db.notas_mensais[chave];
+      const itensEv = this.db.escala.filter((e) => e.data === dataISO && (e.contexto ?? 'dirigentes') === ctx && e.medio_id === 0 && e.observacao && /consagra/i.test(e.observacao));
+      for (const it of itensEv) {
+        await this.excluir('escala', it.id);
+      }
+    } else {
+      this.db.notas_mensais[chave] = texto;
+      const ref = this.db.horarios.find((h) => this.trabalhoContexto(h.trabalho_id) === ctx);
+      const trab = this.db.trabalhos.find((t) => (t.contexto ?? 'dirigentes') === ctx && t.ativo === 1);
+      if (trab) {
+        const itemExistente = this.db.escala.find((e) => e.data === dataISO && (e.contexto ?? 'dirigentes') === ctx && e.medio_id === 0 && /consagra/i.test(e.observacao));
+        if (itemExistente) {
+          await this.atualizar('escala', itemExistente.id, { observacao: texto });
+        } else {
+          await this.criar('escala', {
+            medio_id: 0,
+            trabalho_id: trab.id,
+            data: dataISO,
+            horario_id: ref?.id ?? 0,
+            presente: 0,
+            observacao: texto,
+          });
+        }
+      }
+    }
+    if (this.modo === 'local') this.salvarLocal();
+  },
+  dadosRodapeOficial(mesChave) {
+    const chave = `ajanas_rodape:${mesChave}`;
+    const bruto = this.db.notas_mensais[chave];
+    if (bruto) {
+      try { return JSON.parse(bruto); } catch {}
+    }
+    return JSON.parse(JSON.stringify(PADRAO_RODAPE_OFICIAL));
+  },
+  async salvarDadosRodapeOficial(mesChave, dados) {
+    const chave = `ajanas_rodape:${mesChave}`;
+    if (dados === null) {
+      delete this.db.notas_mensais[chave];
+    } else {
+      this.db.notas_mensais[chave] = JSON.stringify(dados);
+    }
+    if (this.modo === 'local') this.salvarLocal();
+  },
+  async preencherDadosOficiaisAjanas() {
+    this.salvarSnapshotUndo('Preencher escala oficial Ajanãs (Set/Out 2026)');
+    const contextoAnterior = this.contextoAtual;
+    this.contextoAtual = 'ajanas';
+
+    const nomes = [
+      'Arthur', 'Claudio', 'Cleydson', 'Durval', 'Eduardo',
+      'Felicio', 'João Stefhany', 'Jose Raimundo', 'Junio', 'Jurandir',
+      'Leandro Monteiro', 'Luiz Flavio', 'Marcelo Beltrão', 'Marcelo Rios',
+      'Mendanha', 'Ricardo', 'Roberto', 'Rogerio Camilo', 'Rogerio Guedes',
+      'Welton', 'Wilian'
+    ];
+    const mapaMediuns = new Map();
+    for (const n of nomes) {
+      let m = this.db.mediuns.find((x) => x.nome.toLowerCase() === n.toLowerCase());
+      if (!m) {
+        m = await this.criar('mediuns', {
+          nome: n, telefone: '', email: '', observacao: '', funcao: 'Ajanã', ativo: 1
+        });
+      } else if (m.funcao !== 'Ajanã') {
+        await this.atualizar('mediuns', m.id, { funcao: 'Ajanã', ativo: 1 });
+      }
+      mapaMediuns.set(n.toLowerCase(), m.id);
+    }
+    mapaMediuns.set('medanha', mapaMediuns.get('mendanha'));
+    mapaMediuns.set('marcelo beltão', mapaMediuns.get('marcelo beltrão'));
+
+    await this.criarGradeModelo();
+    const trabs = this.trabalhosAtivos().filter((t) => !t.grade || t.grade === 'aj-grade');
+    const tImun = trabs.find((t) => t.nome.toLowerCase() === 'imunização');
+    const tCura = trabs.find((t) => t.nome.toLowerCase() === 'cura');
+    const tDef = trabs.find((t) => t.nome.toLowerCase() === 'defumação');
+    const tR1 = trabs.find((t) => t.nome.toLowerCase() === 'randy 1') || trabs.find((t) => t.nome.toLowerCase() === 'randy');
+    const tR2 = trabs.find((t) => t.nome.toLowerCase() === 'randy 2') || tR1;
+
+    if (tImun) {
+      this.db.horarios = this.db.horarios.filter((h) => !(h.trabalho_id === tImun.id && h.dia_semana !== 6));
+    }
+
+    this.db.escala = this.db.escala.filter((e) =>
+      !((e.data.startsWith('2026-09') || e.data.startsWith('2026-10')) && (e.contexto ?? 'dirigentes') === 'ajanas')
+    );
+
+    const linhas = [
+      { data: '2026-09-02', cura: 'Cleydson', def: 'Junio', r1: 'Leito', r2: 'Leito' },
+      { data: '2026-09-05', imun: 'Felicio', cura: 'Rogerio Camilo', def: 'Junio', r1: 'Cleydson', r2: 'Mendanha' },
+      { data: '2026-09-06', cura: 'Jose Raimundo', def: 'Mendanha', r1: 'Candente', r2: 'Candente' },
+      { data: '2026-09-09', cura: 'Cleydson', def: 'Claudio', r1: 'Junio', r2: 'Roberto' },
+      { data: '2026-09-12', imun: 'Mendanha', cura: 'Rogerio Camilo', def: 'Cleydson', r1: 'Arthur', r2: 'Wilian' },
+      { data: '2026-09-13', evento: 'CONSAGRAÇÃO DE FALANGES MISSIONÁRIAS' },
+      { data: '2026-09-16', cura: 'Claudio', def: 'Roberto', r1: 'Leito Externo', r2: 'Leito Externo' },
+      { data: '2026-09-19', cura: 'Durval', def: 'Jurandir', r1: 'João Stefhany', r2: 'Marcelo Rios' },
+      { data: '2026-09-20', cura: 'Felicio', def: 'Claudio', r1: 'Eduardo', r2: 'Durval' },
+      { data: '2026-09-23', cura: 'Junio', def: 'Roberto', r1: 'Rogerio Camilo', r2: 'Cleydson' },
+      { data: '2026-09-26', imun: 'Durval', cura: 'Cleydson', def: 'Jose Raimundo', r1: 'EJANO', r2: 'EJANO' },
+      { data: '2026-09-27', cura: 'Mendanha', def: 'Felicio', r1: 'Leandro Monteiro', r2: 'Cleydson' },
+      { data: '2026-09-30', cura: 'Felicio', def: 'Leandro Monteiro', r1: 'Leito Externo', r2: 'Leito Externo' },
+      { data: '2026-10-03', imun: 'Luiz Flavio', cura: 'Jose Raimundo', def: 'Mendanha', r1: 'Rogerio Camilo', r2: 'Jurandir' },
+      { data: '2026-10-04', cura: 'Mendanha', def: 'Jose Raimundo', r1: 'Candente', r2: 'Candente' },
+      { data: '2026-10-07', cura: 'Junio', def: 'Claudio', r1: 'Leito', r2: 'Leito' },
+      { data: '2026-10-10', imun: 'Leandro Monteiro', cura: 'Jurandir', def: 'Jose Raimundo', r1: 'Marcelo Beltrão', r2: 'Arthur' },
+      { data: '2026-10-11', evento: 'CONSAGRAÇÃO DE ADJUNTO E POVO' },
+      { data: '2026-10-14', cura: 'Cleydson', def: 'Rogerio Camilo', r1: 'Mendanha', r2: 'Rogerio Camilo' },
+      { data: '2026-10-17', imun: 'Durval', cura: 'Ricardo', def: 'Leandro Monteiro', r1: 'Marcelo Rios', r2: 'Welton' },
+      { data: '2026-10-18', cura: 'Durval', def: 'Jose Raimundo', r1: 'Cleydson', r2: 'Leandro Monteiro' },
+      { data: '2026-10-21', cura: 'Roberto', def: 'Durval', r1: 'Leito Externo', r2: 'Leito Externo' },
+      { data: '2026-10-24', imun: 'Mendanha', cura: 'Durval', def: 'Rogerio Guedes', r1: 'EJANO', r2: 'EJANO' },
+      { data: '2026-10-25', cura: 'Rogerio Camilo', def: 'Mendanha', r1: 'Roberto', r2: 'Claudio' },
+      { data: '2026-10-28', cura: 'Marcelo Beltrão', def: 'Cleydson', r1: 'Rogerio Camilo', r2: 'Mendanha' },
+      { data: '2026-10-31', imun: 'Leandro Monteiro', cura: 'Durval', def: 'Jurandir', r1: 'Claudio', r2: 'Luiz Flavio' },
+    ];
+
+    for (const lin of linhas) {
+      const dt = new Date(lin.data + 'T12:00:00');
+      const dow = dt.getDay();
+
+      if (lin.evento) {
+        await this.salvarEventoDoDia(lin.data, lin.evento, 'ajanas');
+        continue;
+      }
+
+      const atribuir = async (trab, val) => {
+        if (!trab || !val) return;
+        const hor = this.horariosDoTrabalhoNoDia(trab.id, dow)[0];
+        const horId = hor?.id ?? 0;
+        const mid = mapaMediuns.get(val.toLowerCase());
+        if (mid) {
+          await this.criar('escala', {
+            medio_id: mid, trabalho_id: trab.id, data: lin.data,
+            horario_id: horId, presente: 0, observacao: '',
+          });
+        } else {
+          await this.criar('escala', {
+            medio_id: 0, trabalho_id: trab.id, data: lin.data,
+            horario_id: horId, presente: 0, observacao: val,
+          });
+        }
+      };
+
+      if (lin.imun && dow === 6) await atribuir(tImun, lin.imun);
+      if (lin.cura) await atribuir(tCura, lin.cura);
+      if (lin.def) await atribuir(tDef, lin.def);
+      if (lin.r1) await atribuir(tR1, lin.r1);
+      if (lin.r2 && tR2 && tR2 !== tR1) await atribuir(tR2, lin.r2);
+    }
+
+    await this.salvarDadosRodapeOficial('2026-09', {
+      leito: {
+        data1: '02/set',
+        resp1: 'Claudio/Fabiana',
+        data2: '07/out',
+        resp2: 'Genivaldo/Teresinha',
+      },
+      candente: {
+        linha1: [
+          { data: 'Qua 02/Set', texto: 'PAJATO' },
+          { data: 'Dom 06/Set', texto: 'L: Leandro Monteiro<br/>S:Rogerio Guedes' },
+          { data: 'Qua 09/Set', texto: 'EJANO' },
+          { data: 'Qua 16/Set', texto: 'AMARO' },
+          { data: 'Qua 23/Set', texto: 'BELANJO' },
+          { data: 'Qua 30/Set', texto: '' },
+        ],
+        linha2: [
+          { data: 'Dom 04/Out', texto: 'L: Ivan<br/>S: Durval' },
+          { data: 'Qua 07/Out', texto: 'Pajato' },
+          { data: 'Qua 14/Out', texto: 'EJANO' },
+          { data: 'Qua 21/Out', texto: 'AMARO' },
+          { data: 'Qua 28/Out', texto: 'BELANJO' },
+          { data: '', texto: '****' },
+        ],
+      },
+      chamada: 'Chamada para as escalas a partir de 17/10/2026 PARA OS MESES DE NOVEMBRO E DEZEMBRO DE 2026',
+    });
+
+    this.contextoAtual = contextoAnterior;
+    if (this.modo === 'local') this.salvarLocal();
+    return { mediuns: nomes.length, escalas: linhas.length };
+  },
   async moverTrabalho(id, direcao) {
     const lista = this.trabalhosAtivos();
     const i = lista.findIndex((t) => t.id === id);
@@ -629,7 +861,8 @@ export const store = {
       if (!trab) {
         trab = await this.criar('trabalhos', { nome, descricao: '', ativo: 1, ordem: idx * 10, qtd_mediuns: modelo.qtd[nome] ?? 1, contexto: this.contextoAtual, grade: this.contextoAtual === 'ajanas' ? 'aj-grade' : null });
       }
-      for (const dow of modelo.dias) {
+      const diasDoTrab = modelo.diasPorTrabalho?.[nome.toLowerCase()] ?? modelo.dias;
+      for (const dow of diasDoTrab) {
         const existe = this.db.horarios.some((h) => h.trabalho_id === trab.id && h.dia_semana === dow);
         if (!existe) {
           horariosNovos.push({ trabalho_id: trab.id, dia_semana: dow, hora_inicio: '19:00', hora_fim: '21:00' });
@@ -780,15 +1013,32 @@ export const store = {
       }
     }
 
+    // Reordena os planejados para que dentro de cada célula (data + trabalho)
+    // a ordem de criação/persistência siga exatamente as posições (1ª, 2ª, 3ª...)
+    const ordemPorCelula = new Map();
+    for (const d of dias) {
+      for (const t of trabalhos) {
+        const cel = celulaMensal(d.iso, t.id, ctx);
+        cel.itens.forEach((item, idx) => {
+          ordemPorCelula.set(item, idx);
+        });
+      }
+    }
+    planejados.sort((a, b) =>
+      a.data.localeCompare(b.data) ||
+      (a.trabalho_id - b.trabalho_id) ||
+      ((ordemPorCelula.get(a) ?? 999) - (ordemPorCelula.get(b) ?? 999))
+    );
+
     if (this.modo === 'nuvem') {
       try {
-        const { inserir, excluir } = await nuvem();
+        const { inserir, inserirLote, excluir } = await nuvem();
         if (idsRemover.length) await Promise.all(idsRemover.map((id) => excluir('escala', id)));
         this.db.escala = this.db.escala.filter((e) => e.id > 0);
-        const gravados = await Promise.all(planejados.map((pl) => {
-          const { id, ...resto } = pl;
-          return inserir('escala', resto);
-        }));
+        const semId = planejados.map(({ id, ...resto }) => resto);
+        const gravados = inserirLote
+          ? await inserirLote('escala', semId)
+          : await Promise.all(semId.map((resto) => inserir('escala', resto)));
         for (const g of gravados) {
           this.db.escala.push({ ...g, medio_id: g.medio_id ?? 0, horario_id: g.horario_id ?? 0 });
         }
@@ -806,6 +1056,77 @@ export const store = {
   },
 };
 
+function ordemCriacaoEscala(a, b) {
+  const idA = a.id || 0;
+  const idB = b.id || 0;
+  if (idA > 0 && idB > 0) return idA - idB;
+  if (idA < 0 && idB < 0) return Math.abs(idA) - Math.abs(idB);
+  if (idA > 0 && idB < 0) return -1;
+  if (idA < 0 && idB > 0) return 1;
+  return 0;
+}
+
+export function ordenarItensPorPosicao(dataISO, trabalhoId, itensOriginais, ctx = store.contextoAtual) {
+  const comMedium = itensOriginais.filter((e) => e.medio_id > 0);
+  const semMedium = itensOriginais.filter((e) => !(e.medio_id > 0));
+
+  if (comMedium.length <= 1) {
+    return [...comMedium, ...semMedium];
+  }
+
+  const dt = new Date(dataISO + 'T12:00:00');
+  const dow = dt.getDay();
+  const oco = ocorrenciaNoMes(dt, dow);
+  const totalOco = totalOcorrenciasNoMes(dt, dow);
+
+  const regrasFixas = store.db.disponibilidade.filter((r) =>
+    r.ativo === 1 &&
+    (r.contexto ?? 'dirigentes') === ctx &&
+    r.trabalho_id === trabalhoId &&
+    r.dia_semana === dow &&
+    (r.ocorrencia === oco || (r.ocorrencia === 6 && oco === totalOco))
+  );
+
+  const posMap = new Map();
+  for (const r of regrasFixas) {
+    if (r.medio_id) {
+      posMap.set(r.medio_id, Math.max(1, Number(r.posicao) || 1));
+    }
+  }
+
+  const fixos = comMedium
+    .filter((e) => posMap.has(e.medio_id))
+    .sort((a, b) => (posMap.get(a.medio_id) - posMap.get(b.medio_id)) || ordemCriacaoEscala(a, b));
+
+  const avulsos = comMedium
+    .filter((e) => !posMap.has(e.medio_id))
+    .sort(ordemCriacaoEscala);
+
+  const maxPos = fixos.reduce((max, e) => Math.max(max, posMap.get(e.medio_id)), 0);
+  const totalSlots = Math.max(comMedium.length, maxPos);
+  const slots = new Array(totalSlots).fill(null);
+
+  // 1. Posiciona cada médium fixo exatamente no índice da sua posição (posicao - 1)
+  for (const f of fixos) {
+    let idx = posMap.get(f.medio_id) - 1;
+    while (idx < slots.length && slots[idx] !== null) {
+      idx++;
+    }
+    slots[idx] = f;
+  }
+
+  // 2. Preenche as posições livres (ex.: 1ª e 2ª posição) com os médiuns avulsos
+  let slotIdx = 0;
+  for (const av of avulsos) {
+    while (slotIdx < slots.length && slots[slotIdx] !== null) {
+      slotIdx++;
+    }
+    slots[slotIdx] = av;
+  }
+
+  return [...slots.filter(Boolean), ...semMedium];
+}
+
 // ---- Visão diária (1 slot = 1 horário; pode ter N vínculos) ----
 export function slotsDaData(dataISO, ctx = store.contextoAtual) {
   const data = new Date(dataISO + 'T12:00:00');
@@ -813,7 +1134,8 @@ export function slotsDaData(dataISO, ctx = store.contextoAtual) {
   const horarios = store.horariosDoDia(diaSemana, ctx);
   const lancamentos = store.escalaDoDia(dataISO, ctx);
   return horarios.map((h) => {
-    const vinculos = lancamentos.filter((e) => e.horario_id === h.id && e.medio_id > 0);
+    const vinculosBrutos = lancamentos.filter((e) => e.horario_id === h.id && e.medio_id > 0);
+    const vinculos = ordenarItensPorPosicao(dataISO, h.trabalho_id, vinculosBrutos, ctx);
     const esc = vinculos[0];
     const temLeito = lancamentos.some((e) => e.horario_id === h.id && ehLeito(e.observacao));
     return {
@@ -833,39 +1155,15 @@ export function slotsDaData(dataISO, ctx = store.contextoAtual) {
 
 // ---- Grade mensal: célula = (data, trabalho) -> N nomes + flag LEITO ----
 export function celulaMensal(dataISO, trabalhoId, ctx = store.contextoAtual) {
-  const itens = store.db.escala.filter((e) => e.data === dataISO && e.trabalho_id === trabalhoId && (e.contexto ?? 'dirigentes') === ctx);
+  const brutos = store.db.escala.filter((e) => e.data === dataISO && e.trabalho_id === trabalhoId && (e.contexto ?? 'dirigentes') === ctx);
+  const itens = ordenarItensPorPosicao(dataISO, trabalhoId, brutos, ctx);
 
-  const dt = new Date(dataISO + 'T12:00:00');
-  const dow = dt.getDay();
-  const oco = ocorrenciaNoMes(dt, dow);
-  const totalOco = totalOcorrenciasNoMes(dt, dow);
-
-  const regrasFixas = store.db.disponibilidade.filter((r) =>
-    r.ativo === 1 &&
-    (r.contexto ?? 'dirigentes') === ctx &&
-    r.trabalho_id === trabalhoId &&
-    r.dia_semana === dow &&
-    (r.ocorrencia === oco || (r.ocorrencia === 6 && oco === totalOco))
-  );
-
-  const posMap = new Map();
-  for (const r of regrasFixas) {
-    if (r.medio_id) {
-      posMap.set(r.medio_id, r.posicao ?? 1);
-    }
-  }
-
-  itens.sort((a, b) => {
-    const posA = posMap.has(a.medio_id) ? posMap.get(a.medio_id) : 999;
-    const posB = posMap.has(b.medio_id) ? posMap.get(b.medio_id) : 999;
-    if (posA !== posB) return posA - posB;
-    return (a.id || 0) - (b.id || 0);
-  });
-
+  const itemObs = itens.find((e) => e.medio_id === 0 && e.observacao);
   return {
     itens,
     nomes: itens.filter((e) => e.medio_id > 0).map((e) => store.nomeMedium(e.medio_id)),
     temLeito: itens.some((e) => ehLeito(e.observacao)),
+    observacao: itemObs?.observacao ?? '',
   };
 }
 

@@ -100,6 +100,14 @@ export async function inserir(tabela, obj) {
   return data;
 }
 
+export async function inserirLote(tabela, lista) {
+  if (!lista || !lista.length) return [];
+  const dados = lista.map((obj) => paraBanco(tabela, obj));
+  const { data, error } = await supabase.from(tabela).insert(dados).select();
+  if (error) throw new Error(`Falha ao salvar em lote: ${error.message}`);
+  return data || [];
+}
+
 export async function atualizar(tabela, id, patch) {
   const dados = paraBanco(tabela, patch);
   let { error } = await supabase.from(tabela).update(dados).eq('id', id);

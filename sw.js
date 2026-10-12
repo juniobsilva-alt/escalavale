@@ -1,5 +1,5 @@
 // Service Worker para EscalaVale (PWA Offline)
-const CACHE_NAME = 'escalavale-v2.1';
+const CACHE_NAME = 'escalavale-v2.2';
 
 const RECURSOS_ESTATICOS = [
   './',
@@ -23,6 +23,8 @@ const RECURSOS_ESTATICOS = [
   './icons/icone-192.png',
   './icons/icone-512.png',
   './icons/favicon.ico',
+  './img/assinatura_sidney.png',
+  './img/assinatura_jurandir.png',
 ];
 
 // Instalação: pré-carrega os arquivos estáticos essenciais
