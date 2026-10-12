@@ -3,7 +3,7 @@ import {
   haConflitoHorario, mediumDisponivelNaData,
   DIAS_SEMANA, DIAS_CURTO, MESES, SITUACAO, LEITO,
   MODELOS_GRADE, GRADE_CONFIG, FUNCAO_POR_CONTEXTO, GRADES_AJANAS,
-  ocorrenciaNoMes, totalOcorrenciasNoMes,
+  ocorrenciaNoMes, totalOcorrenciasNoMes, ocorrenciaCorresponde,
 } from '../store.js';
 import { hojeISO, formatarData, diaSemanaDe, escapar, toast, pillSituacao, estadoVazio, limparTelefone } from '../utils.js';
 
@@ -1922,7 +1922,7 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
       (r.contexto ?? 'dirigentes') === store.contextoAtual &&
       r.trabalho_id === trabalhoId &&
       r.dia_semana === dow &&
-      (r.ocorrencia === oco || (r.ocorrencia === 6 && oco === totalOco))
+      ocorrenciaCorresponde(r.ocorrencia, oco, totalOco)
     ).sort((a, b) => (a.posicao ?? 1) - (b.posicao ?? 1));
 
     raiz.innerHTML = `
@@ -2132,7 +2132,7 @@ export function renderEscala(el, dataInicial, gradeKey = null) {
         (r.contexto ?? 'dirigentes') === store.contextoAtual &&
         r.trabalho_id === trabalhoId &&
         r.dia_semana === dow &&
-        (r.ocorrencia === oco || (r.ocorrencia === 6 && oco === totalOco))
+        ocorrenciaCorresponde(r.ocorrencia, oco, totalOco)
       ).sort((a, b) => (a.posicao ?? 1) - (b.posicao ?? 1));
 
       raiz.innerHTML = `

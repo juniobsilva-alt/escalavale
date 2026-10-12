@@ -1,7 +1,7 @@
 export const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 export const DIAS_CURTO = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 export const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
-export const OCORRENCIAS = { 1: '1ª', 2: '2ª', 3: '3ª', 4: '4ª', 5: '5ª', 6: 'Última' };
+export const OCORRENCIAS = { 1: '1ª', 2: '2ª', 3: '3ª', 4: '4ª', 5: '5ª', 6: 'Última', 7: 'Todas' };
 export const SITUACAO = { 0: 'Não definido', 1: 'Presente', 2: 'Ausente' };
 export const LEITO = 'LEITO';
 // Contextos de escala: cada um tem trabalhos, horários, escala e disponibilidade próprios
@@ -577,22 +577,27 @@ export const store = {
       });
   },
   verificarConflitoTrabalhoFixo({ medioId, trabalhoId, diaSemana, ocorrencia, posicao = 1, ctx = this.contextoAtual }) {
+    const ocoConflita = (a, b) => a === b || Number(a) === 7 || Number(b) === 7 || Number(a) === 0 || Number(b) === 0;
+
     // 1. Verifica se outro médium já ocupa essa posição fixa neste trabalho/data
     const outro = this.db.disponibilidade.find((d) =>
       d.ativo === 1 &&
       (d.contexto ?? 'dirigentes') === ctx &&
       d.trabalho_id === trabalhoId &&
       d.dia_semana === diaSemana &&
-      d.ocorrencia === ocorrencia &&
+      ocoConflita(d.ocorrencia, ocorrencia) &&
       (d.posicao ?? 1) === posicao &&
       d.medio_id !== medioId
     );
     if (outro) {
+      const descOco = Number(outro.ocorrencia) === 7
+        ? `em todas as ocorrências de ${DIAS_SEMANA[diaSemana]}`
+        : `no(a) ${OCORRENCIAS[outro.ocorrencia]} ${DIAS_SEMANA[diaSemana]}`;
       return {
         conflito: true,
         tipo: 'outro_medium',
         outroMedioNome: this.nomeMedium(outro.medio_id),
-        mensagem: `O médium "${this.nomeMedium(outro.medio_id)}" já está cadastrado na posição ${posicao} de "${this.nomeTrabalho(trabalhoId)}" no(a) ${OCORRENCIAS[ocorrencia]} ${DIAS_SEMANA[diaSemana]}.`,
+        mensagem: `O médium "${this.nomeMedium(outro.medio_id)}" já está cadastrado na posição ${posicao} de "${this.nomeTrabalho(trabalhoId)}" ${descOco}.`,
       };
     }
 
@@ -620,7 +625,7 @@ export const store = {
     if (hNovo) {
       const conflitoHorario = this.db.disponibilidade.find((d) => {
         if (d.ativo !== 1 || (d.contexto ?? 'dirigentes') !== ctx || d.medio_id !== medioId) return false;
-        if (d.dia_semana !== diaSemana || d.ocorrencia !== ocorrencia || !d.trabalho_id || d.trabalho_id === trabalhoId) return false;
+        if (d.dia_semana !== diaSemana || !ocoConflita(d.ocorrencia, ocorrencia) || !d.trabalho_id || d.trabalho_id === trabalhoId) return false;
         const hExistente = this.horariosDoTrabalhoNoDia(d.trabalho_id, diaSemana)[0];
         if (!hExistente) return false;
         return !(hNovo.hora_fim <= hExistente.hora_inicio || hNovo.hora_inicio >= hExistente.hora_fim);
@@ -936,7 +941,7 @@ export const store = {
           .filter((r) =>
             r.trabalho_id === t.id &&
             r.dia_semana === d.dow &&
-            (r.ocorrencia === oco || (r.ocorrencia === 6 && oco === totalOco))
+            ocorrenciaCorresponde(r.ocorrencia, oco, totalOco)
           )
           .sort((a, b) => (a.posicao ?? 1) - (b.posicao ?? 1));
 
@@ -1084,7 +1089,7 @@ export function ordenarItensPorPosicao(dataISO, trabalhoId, itensOriginais, ctx 
     (r.contexto ?? 'dirigentes') === ctx &&
     r.trabalho_id === trabalhoId &&
     r.dia_semana === dow &&
-    (r.ocorrencia === oco || (r.ocorrencia === 6 && oco === totalOco))
+    ocorrenciaCorresponde(r.ocorrencia, oco, totalOco)
   );
 
   const posMap = new Map();
@@ -1214,16 +1219,24 @@ export function totalOcorrenciasNoMes(data, diaSemana) {
   return total;
 }
 
+export function ocorrenciaCorresponde(ocorrenciaRegra, ocorrenciaAtual, totalOcorrencias) {
+  const oco = Number(ocorrenciaRegra);
+  if (oco === 7 || oco === 0) return true;
+  if (oco >= 1 && oco <= 5 && ocorrenciaAtual === oco) return true;
+  if (oco === 6 && ocorrenciaAtual === totalOcorrencias) return true;
+  return false;
+}
+
 export function mediumDisponivelNaData(medioId, dataISO, ctx = store.contextoAtual) {
   const regras = store.regrasDoMedium(medioId, ctx);
   if (regras.length === 0) return true;
   const data = new Date(dataISO + 'T12:00:00');
   const dow = data.getDay();
+  const ocorrenciaAtual = ocorrenciaNoMes(data, dow);
+  const totalOco = totalOcorrenciasNoMes(data, dow);
   for (const r of regras) {
     if (r.dia_semana !== dow) continue;
-    const ocorrenciaAtual = ocorrenciaNoMes(data, dow);
-    if (r.ocorrencia <= 5 && ocorrenciaAtual === r.ocorrencia) return true;
-    if (r.ocorrencia === 6 && ocorrenciaAtual === totalOcorrenciasNoMes(data, dow)) return true;
+    if (ocorrenciaCorresponde(r.ocorrencia, ocorrenciaAtual, totalOco)) return true;
   }
   return false;
 }

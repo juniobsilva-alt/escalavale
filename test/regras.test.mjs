@@ -70,6 +70,17 @@ test('1. mediumDisponivelNaData — regras de ocorrência', async (t) => {
   // 30/09/2026 é a última quarta de setembro
   assert.equal(mediumDisponivelNaData(99, '2026-09-30'), true, '30/09 é a última quarta-feira do mês');
   assert.equal(mediumDisponivelNaData(99, '2026-09-23'), false, '23/09 não é a última quarta-feira do mês');
+
+  // Regra: 7 ("Todas" as ocorrências do dia escolhido no mês)
+  store.db.disponibilidade = [
+    { id: 105, medio_id: 99, dia_semana: 3, ocorrencia: 7, ativo: 1, contexto: 'dirigentes' }
+  ];
+  assert.equal(mediumDisponivelNaData(99, '2026-09-02'), true, 'Deve estar disponível na 1ª quarta (Todas)');
+  assert.equal(mediumDisponivelNaData(99, '2026-09-09'), true, 'Deve estar disponível na 2ª quarta (Todas)');
+  assert.equal(mediumDisponivelNaData(99, '2026-09-16'), true, 'Deve estar disponível na 3ª quarta (Todas)');
+  assert.equal(mediumDisponivelNaData(99, '2026-09-23'), true, 'Deve estar disponível na 4ª quarta (Todas)');
+  assert.equal(mediumDisponivelNaData(99, '2026-09-30'), true, 'Deve estar disponível na 5ª quarta (Todas)');
+  assert.equal(mediumDisponivelNaData(99, '2026-09-05'), false, 'Não deve estar disponível no sábado quando a regra é só Quarta (Todas)');
 });
 
 test('2. haConflitoHorario — detecção de sobreposição de horários', async (t) => {

@@ -88,7 +88,7 @@ export function renderDisponibilidade(el) {
           <div class="field">
             <label for="f-fixo-oco">Ocorrência no mês *</label>
             <select id="f-fixo-oco">
-              ${Object.entries(OCORRENCIAS).map(([v, l]) => `<option value="${v}">${l} ${DIAS_SEMANA[0]}</option>`).join('')}
+              ${Object.entries(OCORRENCIAS).map(([v, l]) => `<option value="${v}">${Number(v) === 7 ? `${l} (${DIAS_SEMANA[0]})` : `${l} ${DIAS_SEMANA[0]}`}</option>`).join('')}
             </select>
           </div>
           <button class="btn btn-primary" id="btn-add-fixo" style="width:100%">+ Adicionar trabalho fixo</button>
@@ -141,8 +141,8 @@ export function renderDisponibilidade(el) {
     const dia = Number(selFixoDia.value);
     const diaNome = DIAS_SEMANA[dia];
     selFixoOco.querySelectorAll('option').forEach((opt) => {
-      const ocoNum = opt.value;
-      opt.textContent = `${OCORRENCIAS[ocoNum]} ${diaNome}`;
+      const ocoNum = Number(opt.value);
+      opt.textContent = ocoNum === 7 ? `${OCORRENCIAS[ocoNum]} (${diaNome})` : `${OCORRENCIAS[ocoNum]} ${diaNome}`;
     });
   }
 
